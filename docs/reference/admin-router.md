@@ -49,25 +49,25 @@ Don't import from `react-router-dom`. It's removed from `package.json`.
 ```tsx
 // src/admin/router.tsx
 <Routes>
-  <Route path="/"                                element={<Navigate to="/admin/dashboard" replace />} />
-  <Route path="/admin"                           element={<Navigate to="/admin/dashboard" replace />} />
-  <Route path="/admin/dashboard"                 element={<AdminEntry section="dashboard" />} />
+  <Route path="/"                                element={<Navigate to="/admin/site" replace />} />
+  <Route path="/admin"                           element={<Navigate to="/admin/site" replace />} />
   <Route path="/admin/site"                      element={<AdminEntry section="site" />} />
   <Route path="/admin/content"                   element={<AdminEntry section="content" />} />
   <Route path="/admin/data"                      element={<AdminEntry section="data" />} />
   <Route path="/admin/media"                     element={<AdminEntry section="media" />} />
-  <Route path="/admin/plugins"                   element={<AdminEntry section="plugins" />} />
+  {/* Plugins workspace is hidden — both routes redirect to the editor. */}
+  <Route path="/admin/plugins"                   element={<Navigate to="/admin/site" replace />} />
+  <Route path="/admin/plugins/:pluginId/:pageId" element={<Navigate to="/admin/site" replace />} />
   <Route path="/admin/users"                     element={<AdminEntry section="users" />} />
   <Route path="/admin/ai"                        element={<AdminEntry section="ai" />} />
   <Route path="/admin/account"                   element={<AdminEntry section="account" />} />
-  <Route path="/admin/plugins/:pluginId/:pageId" element={<AdminEntry section="pluginPage" />} />
-  <Route path="/admin/*"                         element={<Navigate to="/admin/dashboard" replace />} />
+  <Route path="/admin/*"                         element={<Navigate to="/admin/site" replace />} />
 </Routes>
 ```
 
 Patterns:
 
-- Static segments: `/admin/dashboard`
+- Static segments: `/admin/site`
 - Parameter segments: `:pluginId`, `:pageId`
 - Wildcard segment: `*` matches anything, including further slashes (`*`, `/admin/*`) — used for catch-all routes
 - No optional segments, no nested routes
@@ -100,7 +100,7 @@ Walks its `<Route>` children in order, finds the first whose `path` matches the 
 </Routes>
 ```
 
-If no route matches, `Routes` renders `null` — which paints a blank page. That's why `AdminRoutes` ends with a `path="/admin/*"` catch-all redirecting to `/admin/dashboard`: an unknown admin URL (typo, stale deep link, `/admin/login`) shows the login form when unauthenticated and the dashboard otherwise, never an empty tree. The catch-all is deliberately scoped to `/admin/*` — public-site 404s are handled by the publish pipeline (NotFound template) and must never be claimed by the admin SPA.
+If no route matches, `Routes` renders `null` — which paints a blank page. That's why `AdminRoutes` ends with a `path="/admin/*"` catch-all redirecting to `/admin/site`: an unknown admin URL (typo, stale deep link, `/admin/login`) shows the login form when unauthenticated and the editor otherwise, never an empty tree. The catch-all is deliberately scoped to `/admin/*` — public-site 404s are handled by the publish pipeline (NotFound template) and must never be claimed by the admin SPA.
 
 ---
 
@@ -117,7 +117,7 @@ Imperative-style redirect rendered as a component. Fires once on mount and trigg
 | `to`      | -       | Target path                                             |
 | `replace` | `false` | Use `history.replaceState` instead of `pushState`       |
 
-Used for index redirects (`/` → `/admin/dashboard`) and access-denied redirects (`<Navigate to={firstAccessibleWorkspace} replace />`).
+Used for index redirects (`/` → `/admin/site`) and access-denied redirects (`<Navigate to={firstAccessibleWorkspace} replace />`).
 
 ---
 
@@ -342,7 +342,7 @@ render(
 | `history.pushState` directly                                     | Use the router — it fires `instatic:locationchange` for you|
 | Nested routes (`<Route path="/admin/site"><Route ...>...`)       | Flat route table only. Compose with workspace internal state. |
 | Optional URL segments / wildcards                                 | Restructure the route tree.                          |
-| Catch-all 404 route                                              | Keep the scoped `/admin/*` redirect last — invalid admin paths route to the dashboard/login flow. |
+| Catch-all 404 route                                              | Keep the scoped `/admin/*` redirect last — invalid admin paths route to the editor/login flow. |
 
 ---
 

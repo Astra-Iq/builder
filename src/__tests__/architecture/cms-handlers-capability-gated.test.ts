@@ -5,9 +5,8 @@
  *
  * Mirrors `ai-handlers-capability-gated.test.ts` but for the CMS handler
  * tree. Catches the case where a new CMS endpoint ships completely
- * ungated — the previous lack of this gate is what let
- * `/admin/api/cms/dashboard/activity` leak audit data to any
- * authenticated user (A2 in the capabilities review).
+ * ungated — an ungated read endpoint would otherwise leak data (e.g. audit
+ * records) to any authenticated user regardless of capability.
  *
  * The `ALLOWLIST` covers files that are intentionally not gated by an
  * auth helper. Each entry needs a one-line justification.
@@ -99,20 +98,6 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   ['data/preview.ts', 'Uses requireDataAccess helper that wraps requireCapability.'],
   ['data/schemas.ts', 'TypeBox schema definitions; no handlers.'],
   ['data/index.ts', 'Sub-dispatcher; delegates to per-resource handlers that gate.'],
-  // Dashboard sub-handlers — the dispatcher at dashboard/index.ts maps each
-  // widget segment to its reader + capability and runs the gate before
-  // calling the reader. The per-widget files are pure data readers with no
-  // request surface of their own.
-  ['dashboard/index.ts', 'Dispatcher; per-widget capability gates run here before any reader.'],
-  ['dashboard/types.ts', 'TypeScript response shape definitions; no handlers.'],
-  ['dashboard/shared.ts', 'SQL + coercion helpers shared by widget readers; no handlers.'],
-  ['dashboard/pages.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/posts.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/media.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/plugins.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/publishLineup.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/activity.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
-  ['dashboard/storage.ts', 'Widget data reader called by gated dashboard/index.ts dispatcher.'],
 ])
 
 function listHandlerFiles(dir: string): string[] {

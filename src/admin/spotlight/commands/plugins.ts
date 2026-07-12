@@ -13,31 +13,6 @@
 import type { Command, CommandArg } from '../types'
 import type { AdminWorkspace } from '@admin/workspace'
 import { pluginRuntime } from '@core/plugins/runtime'
-import { queuePendingAction } from '../pendingAction'
-
-/**
- * Built-in plugin-related commands (currently just Install plugin). Kept
- * separate from `getPluginsCommands` so the plugin-runtime synthesis tests
- * stay focused on runtime-registered commands only.
- */
-export function getBuiltInPluginCommands(): Command[] {
-  return [
-    {
-      id: 'plugins.install',
-      title: 'Install plugin…',
-      subtitle: 'Upload and install a plugin package',
-      group: 'plugins',
-      iconName: 'package-solid',
-      keywords: ['plugin', 'install', 'upload', 'extension', 'addon', 'new', 'add'],
-      workspaces: ['any'],
-      capability: 'plugins.install',
-      run: (ctx) => {
-        queuePendingAction('plugins.install')
-        ctx.navigate('/admin/plugins')
-      },
-    },
-  ]
-}
 
 /**
  * Returns synthesized spotlight Commands for every PluginCommand registered

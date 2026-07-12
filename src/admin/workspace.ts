@@ -5,9 +5,7 @@
  * can reference the type without creating cycles through layout modules.
  */
 /**
- * `'dashboard'` is the admin home — the first page every user lands on. A
- * configurable widget grid (visitors, pages, posts, storage, plugins, …)
- * plus a setup-onboarding panel. Gated by `dashboard.read`.
+ * `'site'` is the admin home — the visual editor every user lands on.
  *
  * `'account'` is the user's own settings page (profile, devices, security,
  * activity). Self-targeted — no capability gate; every authenticated user
@@ -19,7 +17,6 @@
  * `ai.providers.manage` (or `ai.audit.read` for the read-only audit tab).
  */
 export type AdminWorkspace =
-  | 'dashboard'
   | 'site'
   | 'content'
   | 'data'

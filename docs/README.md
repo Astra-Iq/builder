@@ -29,7 +29,6 @@ docs/
 │   ├── site-shell.md               ← site config (breakpoints, classes, files, deps)
 │   ├── modules.md                  ← module engine + first-party blocks
 │   ├── data-workspace.md           ← Data workspace: table schema + field management UI
-│   ├── dashboard.md                ← Dashboard workspace + widget registry
 │   ├── spotlight.md                ← Cmd+K command palette
 │   ├── agent.md                    ← AI agent integration
 │   ├── templates.md                ← entry templates + dynamic bindings
@@ -145,7 +144,6 @@ Three categories, three voices:
 | [features/auth-and-access.md](features/auth-and-access.md)       | Sessions, MFA, step-up, lockout, CSRF, capabilities                  |
 | [features/site-shell.md](features/site-shell.md)                 | The persisted site config (breakpoints, classes, files, deps)        |
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |
-| [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |
 | [features/agent.md](features/agent.md)                           | AI agent integration and provider-agnostic runtime                   |
 | [features/mcp-connectors.md](features/mcp-connectors.md)         | Instatic as an MCP server — external AI clients drive the CMS over MCP |

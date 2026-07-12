@@ -129,17 +129,6 @@ const ALLOWLIST = new Set([
   // layout).
   'ui/components/DateTimePicker/DateTimePicker.tsx',
 
-  // ── §8.9 Dashboard block library drag-preview tiles ─────────────────────
-  // BlockLibrary's preview tile is a structured drag-source canvas sized to
-  // the widget's natural `defaultSize × default rows` footprint (set inline
-  // by the parent tile). The whole surface is the widget renderer; dnd-kit
-  // drag listeners attach to this element so the user can drag the preview
-  // up to the dashboard grid. Button's inline-flex size tokens (sm = 26px,
-  // lg = 44px) cannot represent this custom-sized canvas — same pattern
-  // class as §8.5 (full-surface media tiles) but with dnd-kit listeners
-  // attached.
-  'admin/pages/dashboard/components/BlockLibrary.tsx',
-
   // ── §8.8 DataGrid custom CSS-Grid cells ─────────────────────────────────
   // The Data table is a CSS-Grid (display: grid + display: contents on rows)
   // with sticky column / group headers. Two grid-cell types cannot be
