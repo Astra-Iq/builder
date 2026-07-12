@@ -91,14 +91,12 @@ function row(input: {
 describe('admin capability access helpers', () => {
   it('maps capability families to the expected admin workspaces', () => {
     const operator = user('operator', [
-      'dashboard.read',
       'site.read',
       'site.content.edit',
       'content.create',
       'data.custom.tables.read',
       'media.read',
     ])
-    expect(canAccessWorkspace(operator, 'dashboard')).toBe(true)
     expect(canAccessWorkspace(operator, 'site')).toBe(true)
     expect(canAccessWorkspace(operator, 'content')).toBe(true)
     expect(canAccessWorkspace(operator, 'data')).toBe(true)
@@ -107,16 +105,20 @@ describe('admin capability access helpers', () => {
     expect(canAccessWorkspace(operator, 'users')).toBe(false)
     expect(canAccessWorkspace(operator, 'ai')).toBe(false)
     expect(canAccessWorkspace(operator, 'account')).toBe(true)
-    expect(firstAccessibleWorkspace(operator)).toBe('dashboard')
+    // Site (the visual editor) is the canonical admin home.
+    expect(firstAccessibleWorkspace(operator)).toBe('site')
 
     const userManager = user('user-manager', ['users.manage'])
     expect(canAccessWorkspace(userManager, 'users')).toBe(true)
     expect(firstAccessibleWorkspace(userManager)).toBe('users')
 
+    // The plugins workspace is hidden: a user can still be gated as able to
+    // access it, but it is never a landing target (omitted from
+    // firstAccessibleWorkspace's order), so a plugins-only role resolves to null.
     const pluginOperator = user('plugin-operator', ['plugins.lifecycle'])
     expect(canAccessWorkspace(pluginOperator, 'plugins')).toBe(true)
     expect(canAccessWorkspace(pluginOperator, 'pluginPage')).toBe(true)
-    expect(firstAccessibleWorkspace(pluginOperator)).toBe('plugins')
+    expect(firstAccessibleWorkspace(pluginOperator)).toBeNull()
 
     const aiAuditor = user('ai-auditor', ['ai.audit.read'])
     expect(canAccessWorkspace(aiAuditor, 'ai')).toBe(true)

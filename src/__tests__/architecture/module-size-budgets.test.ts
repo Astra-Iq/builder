@@ -111,7 +111,6 @@ const GRANDFATHERED: Record<string, number> = {
   // DB→wire projection helpers moved to contentProjection.ts.
   'src/admin/pages/site/panels/TypographyPanel/FontsSection/AddGoogleFontDialog.tsx': 751,
   'src/core/markdown/markdownDocument.ts': 748,
-  'src/admin/pages/dashboard/DashboardPage.tsx': 732,
 }
 
 // ---------------------------------------------------------------------------

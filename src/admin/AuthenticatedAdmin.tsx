@@ -5,7 +5,7 @@
  *   - SpotlightRoot (Cmd+K palette) + its keybinding listener
  *   - AdminSessionProvider (session context for authenticated children)
  *   - StepUpProvider (auth re-verification for sensitive actions)
- *   - The 10 workspace page components (DashboardPage, SitePage, …)
+ *   - The workspace page components (SitePage, ContentPage, …)
  *   - installPluginRuntime() (populates globalThis.__instatic for plugins)
  *
  * Splitting this out from `AdminEntry` keeps the cold-load JS execution
@@ -20,17 +20,17 @@
  * Each workspace page is wrapped with `prewarmedLazy(...)`. The pattern
  * is "load the active page first, others in idle time after":
  *
- *   1. The page the user is on (e.g., DashboardPage when section ===
- *      'dashboard') loads first. React renders it; `prewarmedLazy`'s
+ *   1. The page the user is on (e.g., SitePage when section ===
+ *      'site') loads first. React renders it; `prewarmedLazy`'s
  *      cold-path triggers `.preload()` and suspends to the nearest
- *      Suspense boundary until the import lands. The DASHBOARD chunk
- *      gets vite's CPU / the HTTP connection slot to itself — no 9
+ *      Suspense boundary until the import lands. The active chunk
+ *      gets vite's CPU / the HTTP connection slot to itself — no
  *      sibling compilations competing for resources.
  *
  *   2. After the active page paints (i.e., the user actually sees the
- *      dashboard), an effect fires `requestIdleCallback` to schedule
- *      `.preload()` calls for the OTHER 9 workspace pages. They load
- *      in the background while the user is reading the dashboard.
+ *      section they landed on), an effect fires `requestIdleCallback` to
+ *      schedule `.preload()` calls for the OTHER workspace pages. They
+ *      load in the background while the user is working.
  *
  *   3. When the user clicks any nav link, the target page's cached
  *      component renders synchronously via `prewarmedLazy`'s
@@ -61,12 +61,8 @@ import { prewarmedLazy } from './lib/prewarmedLazy'
 import { useAdminUi } from './state/adminUi'
 import styles from './AdminEntry.module.css'
 
-// The 10 workspace pages — pre-warmed AND synchronously-renderable once
+// The workspace pages — pre-warmed AND synchronously-renderable once
 // loaded. See file header for the rationale.
-const DashboardPage = prewarmedLazy(
-  () => import('./pages/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
-  { displayName: 'DashboardPage' },
-)
 const SitePage = prewarmedLazy(
   () => import('./pages/site/SitePage').then((m) => ({ default: m.SitePage })),
   { displayName: 'SitePage' },
@@ -156,7 +152,7 @@ if (typeof window !== 'undefined') {
     pathname.startsWith('/admin/users') ? UsersPage :
     pathname.startsWith('/admin/ai') ? AiPage :
     pathname.startsWith('/admin/account') ? AccountPage :
-    DashboardPage
+    SitePage
   void activePage.preload().catch(() => {
     // Cold-render retry will re-fire preload via prewarmedLazy's throw.
   })
@@ -178,7 +174,6 @@ const ALL_WORKSPACE_PAGES = [
   SitePage,
   ContentPage,
   DataPage,
-  DashboardPage,
   MediaPage,
   PluginsPage,
   UsersPage,
@@ -198,7 +193,7 @@ function pageForSection(section: AdminWorkspace) {
     section === 'ai' ? AiPage :
     section === 'pluginPage' ? PluginPage :
     section === 'account' ? AccountPage :
-    DashboardPage
+    SitePage
   )
 }
 
@@ -211,8 +206,8 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
   // Schedule background preloads for non-active workspace pages AFTER
   // the active page has rendered + painted. `useEffect` fires after
   // the browser's first paint of the active page, so the user sees the
-  // dashboard (or whatever section they landed on) before we kick off
-  // network/CPU work for sibling pages.
+  // section they landed on before we kick off network/CPU work for
+  // sibling pages.
   //
   // `requestIdleCallback` is the right primitive here — it fires when
   // the browser has truly idle main-thread time. In dev mode that's
@@ -308,8 +303,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
                   legitimately lazy because the editor surfaces are large and
                   shouldn't ship until needed. */}
           <Suspense fallback={<AppLoadingScreen />}>
-            {section === 'dashboard' ? <DashboardPage /> :
-              section === 'site' ? <SitePage /> :
+            {section === 'site' ? <SitePage /> :
               section === 'content' ? <ContentPage /> :
               section === 'data' ? <DataPage /> :
               section === 'media' ? <MediaPage /> :
@@ -318,7 +312,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
               section === 'ai' ? <AiPage /> :
               section === 'pluginPage' ? <PluginPage /> :
               section === 'account' ? <AccountPage /> :
-              <DashboardPage />}
+              <SitePage />}
           </Suspense>
           {siteImportOpen && (
             <Suspense fallback={null}>

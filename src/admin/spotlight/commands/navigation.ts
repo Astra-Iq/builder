@@ -36,14 +36,6 @@ const DATA_WORKSPACE_CAPABILITIES = [
   ...CONTENT_ACCESS_CAPABILITIES,
 ] as const
 
-/** Mirrors `canAccessPluginsWorkspace` in access.ts. */
-const PLUGINS_ACCESS_CAPABILITIES = [
-  'plugins.read',
-  'plugins.configure',
-  'plugins.install',
-  'plugins.lifecycle',
-] as const
-
 export function getNavigationCommands(): Command[] {
   return [
     {
@@ -99,20 +91,6 @@ export function getNavigationCommands(): Command[] {
       capability: 'media.read',
       run: (ctx) => {
         ctx.navigate('/admin/media')
-        ctx.closeSpotlight()
-      },
-    },
-    {
-      id: 'navigation.goToPlugins',
-      title: 'Go to Plugins',
-      subtitle: 'Manage installed plugins',
-      group: 'navigation',
-      iconName: 'package-solid',
-      keywords: ['plugins', 'extensions', 'addons', 'install'],
-      workspaces: ['any'],
-      capability: PLUGINS_ACCESS_CAPABILITIES,
-      run: (ctx) => {
-        ctx.navigate('/admin/plugins')
         ctx.closeSpotlight()
       },
     },

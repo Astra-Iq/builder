@@ -74,9 +74,8 @@ interface AdminUiState {
 
   /**
    * Full public path of the document currently being edited. `null` on every
-   * non-editor admin route (Plugins / Users / Account / Dashboard / …) and
-   * whenever no specific document is in focus (e.g. VC edit mode, an empty
-   * Content workspace).
+   * non-editor admin route (Users / Account / …) and whenever no specific
+   * document is in focus (e.g. VC edit mode, an empty Content workspace).
    *
    * Powers the toolbar's "Open live page" icon button — clicking opens this
    * path in a new tab. Stored as the full path (including leading slash and

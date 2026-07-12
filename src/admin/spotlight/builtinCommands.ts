@@ -31,7 +31,7 @@ import { getMediaCommands } from './commands/media'
 import { getDataCommands } from './commands/data'
 import { getFrameworkCommands } from './commands/framework'
 import { getVisualComponentsCommands } from './commands/visualComponents'
-import { getBuiltInPluginCommands, getPluginsCommands } from './commands/plugins'
+import { getPluginsCommands } from './commands/plugins'
 import { getUsersCommands } from './commands/users'
 import { getPreviewCommands } from './commands/preview'
 import { getAiAssistantCommands } from './commands/aiAssistant'
@@ -76,7 +76,6 @@ export function getAllCommands(): Command[] {
       ...getDataCommands(),
       ...getFrameworkCommands(),
       ...getVisualComponentsCommands(),
-      ...getBuiltInPluginCommands(),
       ...getUsersCommands(),
       ...getAccountCommands(),
       ...getSettingsCommands(),
