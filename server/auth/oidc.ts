@@ -20,6 +20,15 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import { createHash, randomBytes } from 'node:crypto'
 
+const REQUIRED_LOGTO_SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'roles',
+  'urn:logto:scope:organizations',
+  'urn:logto:scope:organization_roles',
+] as const
+
 export interface LogtoConfig {
   issuer: string
   authorizationEndpoint: string
@@ -33,6 +42,12 @@ export interface LogtoConfig {
   /** Absolute URL Logto returns to after RP-initiated logout. */
   postLogoutRedirectUri: string
   scopes: string
+}
+
+function normalizeScopes(value: string | undefined): string {
+  const scopes = new Set(value?.trim().split(/\s+/).filter(Boolean) ?? [])
+  for (const scope of REQUIRED_LOGTO_SCOPES) scopes.add(scope)
+  return [...scopes].join(' ')
 }
 
 /**
@@ -68,9 +83,7 @@ export function readLogtoConfig(
     appSecret,
     redirectUri,
     postLogoutRedirectUri,
-    scopes:
-      env.LOGTO_SCOPES?.trim() ||
-      'openid profile email roles urn:logto:scope:organizations urn:logto:scope:organization_roles',
+    scopes: normalizeScopes(env.LOGTO_SCOPES),
   }
 }
 

@@ -4,7 +4,7 @@ Authentication is delegated to **Logto** (OIDC). The builder is an OIDC client:
 unauthenticated visitors are redirected to Logto to sign in, Logto redirects
 back to a callback, and the builder mints its own opaque session cookie.
 Authorization keeps the builder's capability model — a signed-in user's Logto
-**role** maps onto one of the four built-in roles, whose capability set gates
+organization role maps onto per-site membership, whose capability set gates
 every request exactly as before.
 
 There is no local password, MFA, lockout, step-up, or user-management surface —
@@ -25,10 +25,10 @@ Logto owns identity and credentials.
 - **Capabilities** are the access model. `CoreCapability` (`src/core/capabilities.ts`)
   and the four built-in roles in `SYSTEM_ROLES` (`server/auth/capabilities.ts`) are
   unchanged. Handlers gate on capability via `requireCapability(req, db, '...')`.
-- **Role mapping:** the user's Logto role name (`owner` / `admin` / `client` / `member`)
-  selects the matching built-in role; the local identity row is assigned that `role_id`,
-  and capabilities flow from `roles.capabilities_json` exactly as before. Default when no
-  role matches: `member` (no capabilities).
+- **Role mapping:** each Logto organization role named `owner` or `admin` selects
+  the matching built-in role for that organization's site membership. The local
+  identity row stays on the global `member` baseline; capabilities flow from
+  `site_members(current_site_id).role_id`.
 - **Local identities are auto-provisioned.** A `users` row keyed by the Logto subject
   (`users.logto_subject`) is upserted on every login, so content authorship, audit actor,
   and the `sessions.user_id` FK keep referencing a real local id. The row carries no
@@ -55,7 +55,9 @@ GET /admin/api/cms/auth/callback?code=…&state=…
     │  validate state == tx cookie
     │  exchange code → tokens (server/auth/oidc.ts exchangeCodeForTokens)
     │  verify ID token via JWKS + iss/aud/nonce (verifyIdToken)
-    │  provisionUserFromClaims → upsert users row by logto_subject, assign mapped role
+    │  fetch userinfo → read organization_data + organization_roles
+    │  provisionUserFromClaims → upsert users row by logto_subject
+    │  ensure one site + site_members row per eligible Owner/Admin organization
     │  createSession + Set-Cookie: instatic_admin_session=…
     ▼
 302 → /admin/site
@@ -81,11 +83,12 @@ routes return 500 until they are present.
 | `LOGTO_APP_ID` / `LOGTO_APP_SECRET` | The Logto "Traditional Web" application credentials. |
 | `PUBLIC_ORIGIN` | Used to derive the callback (`/admin/api/cms/auth/callback`) and post-logout (`/admin`) URIs. |
 | `LOGTO_REDIRECT_URI` / `LOGTO_POST_LOGOUT_REDIRECT_URI` | Optional explicit overrides. |
-| `LOGTO_SCOPES` | Optional; defaults to `openid profile email roles`. |
+| `LOGTO_SCOPES` | Optional custom scopes. The builder always appends `openid profile email roles urn:logto:scope:organizations urn:logto:scope:organization_roles`, because org membership + organization-role claims are required to open a site. |
 
-In Logto: create roles named `owner`, `admin`, `client`, `member`; assign them to users;
-register the callback URL and the post-logout URL on the application; ensure the `roles`
-scope is granted so the user's roles appear in the ID token's `roles` claim.
+In Logto: create organization roles named `owner` and `admin`; assign them to users
+inside the organizations they should edit; register the callback URL and the
+post-logout URL on the application; grant the organization scopes so userinfo
+contains `organization_data` and `organization_roles`.
 
 ---
 
@@ -93,17 +96,17 @@ scope is granted so the user's roles appear in the ID token's `roles` claim.
 
 The four built-in roles and their capability sets live in `SYSTEM_ROLES`
 (`server/auth/capabilities.ts`) and are seeded/resynced into the `roles` table at boot
-(`syncSystemRoles`). This is the reference the Logto role name maps onto:
+(`syncSystemRoles`). Owner/Admin are the editable Logto organization roles; Member is
+the no-capability global baseline for provisioned identities:
 
 | Role | Capabilities |
 |------|--------------|
 | Owner | All `CORE_CAPABILITIES` |
 | Admin | All except `roles.manage` |
-| Client | A copy-editor subset (`site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read`) |
 | Member | None |
 
 The mapping and provisioning code is `server/auth/logtoIdentity.ts`
-(`mapLogtoRoleToBuilderRole`, `provisionUserFromClaims`); the OIDC client is
+(`mapOrgRoleToBuilderRole`, `provisionUserFromClaims`); the OIDC client is
 `server/auth/oidc.ts`.
 
 ---
@@ -127,7 +130,7 @@ if (user instanceof Response) return user   // 401 unauth / 403 missing capabili
 src/core/capabilities.ts       — CORE_CAPABILITIES, CoreCapability (unchanged)
 server/auth/
 ├── oidc.ts             — OIDC client: authorize URL, PKCE, token exchange, JWKS verify, end-session
-├── logtoIdentity.ts    — Logto role → builder role mapping + provisionUserFromClaims
+├── logtoIdentity.ts    — Logto org role → builder site-membership mapping + provisionUserFromClaims
 ├── authz.ts            — requireAuthenticatedUser / requireCapability / requireAnyCapability
 ├── capabilities.ts     — SYSTEM_ROLES, normalizeCapabilities, roleHasCapability
 ├── sessions.ts         — createSession, findUserBySessionHash, revokeSessionByHash

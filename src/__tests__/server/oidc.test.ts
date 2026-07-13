@@ -46,6 +46,21 @@ describe('Logto OIDC client', () => {
     expect(cfg?.scopes).toContain('urn:logto:scope:organization_roles')
   })
 
+  it('readLogtoConfig preserves custom scopes while forcing Logto organization scopes', () => {
+    const cfg = readLogtoConfig(
+      {
+        LOGTO_ENDPOINT: 'https://x.logto.app/',
+        LOGTO_APP_ID: 'a',
+        LOGTO_APP_SECRET: 's',
+        LOGTO_SCOPES: 'openid profile email roles custom.scope',
+      },
+      ['https://cms.test'],
+    )
+    expect(cfg?.scopes).toBe(
+      'openid profile email roles custom.scope urn:logto:scope:organizations urn:logto:scope:organization_roles',
+    )
+  })
+
   it('fetchUserinfo GETs the userinfo endpoint with the bearer token', async () => {
     let seenUrl = ''
     let seenAuth = ''
