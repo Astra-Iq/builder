@@ -88,7 +88,7 @@ The repo is organized by responsibility, not by feature. Every file has one reas
 |------------------------------|---------------------------------------|----------------------------------------------------------------------|
 | HTTP & routing               | `server/router.ts`, `server/http.ts`  | Request dispatch, body parsing, error envelopes                      |
 | CMS endpoints                | `server/handlers/cms/*.ts`            | Per-resource handlers (pages, posts, components, media, plugins, …)  |
-| Auth & sessions              | `server/auth/*`                       | Session validation, capability checks, login flow                    |
+| Auth & sessions              | `server/auth/*`                       | Logto OIDC client (`oidc.ts`, `logtoIdentity.ts`), session validation, capability checks |
 | Repositories                 | `server/repositories/*.ts`            | Database access; dialect-naive ANSI SQL only                         |
 | Database adapters            | `server/db/postgres.ts`, `sqlite.ts`  | Engine-specific `DbClient` implementation                            |
 | Migrations                   | `server/db/migrations-*.ts`           | Schema in both dialects, parity-gated                                |
@@ -296,7 +296,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the full fea
 
 The browser bundle is a single Vite-built React 19 SPA, mounted at `/admin`. Inside it:
 
-- `src/admin/` — the **admin shell**: routing, sessions, top-level navigation, the workspaces for content / data / media / users, and the plugin host UI.
+- `src/admin/` — the **admin shell**: routing, sessions, top-level navigation, the workspaces for content / data / media, and the plugin host UI.
 - `src/admin/pages/site/` — the **visual editor**: the canvas, panels, toolbar, picker, property controls, and the editor store (Zustand + Mutative). This is the editor itself.
 
 The split exists because the editor is a self-contained app with its own state and lifecycle, but it shares the admin's auth, routing, and theming.

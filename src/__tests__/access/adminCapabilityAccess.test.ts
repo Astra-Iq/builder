@@ -102,15 +102,10 @@ describe('admin capability access helpers', () => {
     expect(canAccessWorkspace(operator, 'data')).toBe(true)
     expect(canAccessWorkspace(operator, 'media')).toBe(true)
     expect(canAccessWorkspace(operator, 'plugins')).toBe(false)
-    expect(canAccessWorkspace(operator, 'users')).toBe(false)
     expect(canAccessWorkspace(operator, 'ai')).toBe(false)
     expect(canAccessWorkspace(operator, 'account')).toBe(true)
     // Site (the visual editor) is the canonical admin home.
     expect(firstAccessibleWorkspace(operator)).toBe('site')
-
-    const userManager = user('user-manager', ['users.manage'])
-    expect(canAccessWorkspace(userManager, 'users')).toBe(true)
-    expect(firstAccessibleWorkspace(userManager)).toBe('users')
 
     // The plugins workspace is hidden: a user can still be gated as able to
     // access it, but it is never a landing target (omitted from

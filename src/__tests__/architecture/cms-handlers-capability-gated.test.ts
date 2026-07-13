@@ -92,6 +92,7 @@ const ALLOWLIST: ReadonlyMap<string, string> = new Map([
   // wrap requireCapability inside data/access.ts); rows.ts and preview.ts
   // do too. The regex doesn't pick up the indirection through helpers,
   // but the gates are present.
+  ['data/tables.ts', 'Uses requireDataTablesRead / requireCustomTablesManager (access helpers that wrap requireCapability).'],
   ['data/meta.ts', 'Uses requireDataAccess (access helper that wraps requireCapability).'],
   ['data/search.ts', 'Uses requireDataAccess (access helper that wraps requireCapability).'],
   ['data/rows.ts', 'Uses requireData* helpers from data/access.ts (which call requireCapability).'],

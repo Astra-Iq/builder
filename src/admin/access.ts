@@ -244,10 +244,6 @@ export function canUseAiChat(user: CmsCurrentUser | null): boolean {
 // Workspace gating
 // ---------------------------------------------------------------------------
 
-function canAccessUsersWorkspace(user: CmsCurrentUser | null): boolean {
-  return hasAnyCapability(user, ['users.manage', 'roles.manage', 'audit.read'])
-}
-
 function canAccessAiWorkspace(user: CmsCurrentUser | null): boolean {
   return hasAnyCapability(user, ['ai.providers.manage', 'ai.audit.read'])
 }
@@ -283,8 +279,6 @@ export function canAccessWorkspace(user: CmsCurrentUser | null, workspace: Admin
     case 'plugins':
     case 'pluginPage':
       return canAccessPluginsWorkspace(user)
-    case 'users':
-      return canAccessUsersWorkspace(user)
     case 'ai':
       return canAccessAiWorkspace(user)
     case 'account':
@@ -298,7 +292,7 @@ export function firstAccessibleWorkspace(user: CmsCurrentUser | null): AdminWork
   // Site (the visual editor) is the canonical admin home. Falls through to the
   // next accessible workspace for users whose role doesn't grant `site.read`.
   // Plugins is omitted — the workspace is hidden, so it is never a landing target.
-  const order: AdminWorkspace[] = ['site', 'content', 'data', 'media', 'users', 'ai']
+  const order: AdminWorkspace[] = ['site', 'content', 'data', 'media', 'ai']
   return order.find((workspace) => canAccessWorkspace(user, workspace)) ?? null
 }
 
@@ -314,8 +308,6 @@ export function workspacePath(workspace: AdminWorkspace): string {
       return '/admin/media'
     case 'plugins':
       return '/admin/plugins'
-    case 'users':
-      return '/admin/users'
     case 'ai':
       return '/admin/ai'
     case 'pluginPage':

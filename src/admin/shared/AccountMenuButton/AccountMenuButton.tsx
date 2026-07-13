@@ -34,24 +34,22 @@ import {
 } from '@ui/components/ContextMenu'
 import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { PowerOffIcon } from 'pixel-art-icons/icons/power-off'
-import { MonitorSolidIcon } from 'pixel-art-icons/icons/monitor-solid'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
-import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { UserAvatar } from '@admin/shared/UserAvatar'
-import { logoutAllOtherCmsSessions, logoutCms } from '@core/persistence'
 import styles from './AccountMenuButton.module.css'
-import { getErrorMessage } from '@core/utils/errorMessage'
 
 const ACCOUNT_ROUTE = '/admin/account'
+// GET route: revokes the local session, clears the cookie, and redirects to
+// Logto's end-session endpoint. A hard navigation is intentional — the next
+// request boots the admin shell from scratch and the redirect hands off to Logto.
+const LOGOUT_URL = '/admin/api/cms/auth/logout'
 
 export function AccountMenuButton(): ReactNode {
   const user = useAuthenticatedAdminUser()
   const navigate = useAdminNavigate()
-  const { runStepUp } = useStepUp()
   const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState<null | 'logout' | 'logout-all'>(null)
-  const [status, setStatus] = useState<{ tone: 'info' | 'error'; message: string } | null>(null)
+  const [busy, setBusy] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const displayName = user.displayName.trim() || user.email
@@ -59,53 +57,12 @@ export function AccountMenuButton(): ReactNode {
 
   function close(): void {
     setOpen(false)
-    setStatus(null)
   }
 
-  async function handleSignOut(): Promise<void> {
+  function handleSignOut(): void {
     if (busy) return
-    setBusy('logout')
-    setStatus(null)
-    try {
-      await logoutCms()
-      // Hard navigation is intentional here — the next request must boot the
-      // admin shell from scratch so the unauth login form renders. A soft
-      // navigate would keep the React tree alive with stale session state.
-      window.location.assign('/admin')
-    } catch (err) {
-      console.error('[account-menu] sign out failed:', err)
-      setBusy(null)
-      setStatus({
-        tone: 'error',
-        message: getErrorMessage(err, 'Could not sign out.'),
-      })
-    }
-  }
-
-  async function handleSignOutAllDevices(): Promise<void> {
-    if (busy) return
-    setBusy('logout-all')
-    setStatus(null)
-    try {
-      const revokedCount = await runStepUp(() => logoutAllOtherCmsSessions())
-      setBusy(null)
-      const noun = revokedCount === 1 ? 'device' : 'devices'
-      setStatus({
-        tone: 'info',
-        message: revokedCount === 0
-          ? 'No other devices were signed in.'
-          : `Signed out ${revokedCount} ${noun}.`,
-      })
-    } catch (err) {
-      setBusy(null)
-      // Cancelled step-up is a normal flow, not an error to surface.
-      if (err instanceof Error && err.message === StepUpCancelledMessage) return
-      console.error('[account-menu] sign out all devices failed:', err)
-      setStatus({
-        tone: 'error',
-        message: getErrorMessage(err, 'Could not sign out other devices.'),
-      })
-    }
+    setBusy(true)
+    window.location.assign(LOGOUT_URL)
   }
 
   return (
@@ -155,29 +112,13 @@ export function AccountMenuButton(): ReactNode {
             <span>Account &amp; security</span>
           </ContextMenuItem>
           <ContextMenuItem
-            onClick={() => void handleSignOut()}
-            disabled={busy !== null}
+            onClick={handleSignOut}
+            disabled={busy}
             data-testid="account-menu-sign-out"
           >
             <PowerOffIcon size={12} aria-hidden="true" />
-            <span>{busy === 'logout' ? 'Signing out…' : 'Sign out'}</span>
+            <span>{busy ? 'Signing out…' : 'Sign out'}</span>
           </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => void handleSignOutAllDevices()}
-            disabled={busy !== null}
-            data-testid="account-menu-sign-out-all"
-          >
-            <MonitorSolidIcon size={12} aria-hidden="true" />
-            <span>{busy === 'logout-all' ? 'Signing out other devices…' : 'Sign out all devices'}</span>
-          </ContextMenuItem>
-          {status && (
-            <p
-              className={status.tone === 'error' ? `${styles.status} ${styles.statusError}` : styles.status}
-              role={status.tone === 'error' ? 'alert' : 'status'}
-            >
-              {status.message}
-            </p>
-          )}
         </ContextMenu>,
         document.body,
       )}

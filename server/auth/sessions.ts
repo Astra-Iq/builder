@@ -25,32 +25,15 @@ const LAST_SEEN_TRACKER_MAX_ENTRIES = 10_000
 /** idHash -> epoch ms of the last `last_seen_at` write we issued for it. */
 const lastSeenTouchedAt = new Map<string, number>()
 
-interface SessionUserRow extends JoinedUserRow {
-  session_mfa_passed_at: Date | string | null
-}
-
-interface SessionRotationRow {
-  user_id: string
-  expires_at: Date | string
-  ip_address: string | null
-  user_agent: string | null
-  device_label: string
-  mfa_passed_at: Date | string | null
-  step_up_expires_at: Date | string | null
-}
-
-interface RotatedSession {
-  expiresAt: Date
-}
-
 function sessionIdleCutoff(now = Date.now()): Date {
   return new Date(now - SESSION_IDLE_TIMEOUT_MS)
 }
 
-function dateValue(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}
-
+/**
+ * Create an opaque server session for an already-authenticated identity (the
+ * OIDC callback mints one after verifying the Logto ID token). The session
+ * cookie carries the raw token; only its hash (`idHash`) is stored.
+ */
 export async function createSession(
   db: DbClient,
   input: {
@@ -59,26 +42,14 @@ export async function createSession(
     expiresAt: Date
     ipAddress: string | null
     userAgent: string | null
-    /**
-     * Optional override for the device label. Falls back to a UA-derived
-     * label, then the empty string. Empty is acceptable — the schema allows
-     * it as a not-null sentinel and the UI renders "Unknown device".
-     */
+    /** Optional device label; falls back to a UA-derived label, then ''. */
     deviceLabel?: string
-    mfaPassedAt?: Date | null
-    /**
-     * Pre-open a step-up window on the row. Production code never sets
-     * this at session creation — step-up is opened by `rotateSessionToken`
-     * after a fresh password re-entry. Tests use it to skip the step-up
-     * dance when verifying handlers that require a step-up gate.
-     */
-    stepUpExpiresAt?: Date | null
   },
 ): Promise<void> {
   const deviceLabel = input.deviceLabel ?? deriveDeviceLabel(input.userAgent)
   await db`
-    insert into sessions (id_hash, user_id, expires_at, ip_address, user_agent, device_label, mfa_passed_at, step_up_expires_at)
-    values (${input.idHash}, ${input.userId}, ${input.expiresAt}, ${input.ipAddress}, ${input.userAgent}, ${deviceLabel}, ${input.mfaPassedAt ?? null}, ${input.stepUpExpiresAt ?? null})
+    insert into sessions (id_hash, user_id, expires_at, ip_address, user_agent, device_label)
+    values (${input.idHash}, ${input.userId}, ${input.expiresAt}, ${input.ipAddress}, ${input.userAgent}, ${deviceLabel})
   `
 }
 
@@ -86,15 +57,14 @@ async function findSessionUserRow(
   db: DbClient,
   idHash: string,
   now = Date.now(),
-): Promise<SessionUserRow | null> {
+): Promise<JoinedUserRow | null> {
   const idleCutoff = sessionIdleCutoff(now)
   const currentTime = new Date(now)
   // Joins through `sessions`, so it can't reuse the `queryUsers` FROM clause —
   // but it splices the same `USER_JOINED_COLUMNS` constant so the hydrated user
   // column list still lives in exactly one place.
-  const { rows } = await db.unsafe<SessionUserRow>(
-    `select ${USER_JOINED_COLUMNS},
-            sessions.mfa_passed_at as session_mfa_passed_at
+  const { rows } = await db.unsafe<JoinedUserRow>(
+    `select ${USER_JOINED_COLUMNS}
      from sessions
      join users on users.id = sessions.user_id
      join roles on roles.id = users.role_id
@@ -119,8 +89,6 @@ export async function findUserBySessionHash(
   const row = await findSessionUserRow(db, idHash, now)
   if (!row) return null
   const user = rowToUser(row)
-  if (user.mfaEnabled && row.session_mfa_passed_at == null) return null
-
   await touchSessionLastSeen(db, idHash, now)
   return user
 }
@@ -128,8 +96,7 @@ export async function findUserBySessionHash(
 /**
  * Update `sessions.last_seen_at` for an authenticated request, debounced to at
  * most once per `LAST_SEEN_TOUCH_DEBOUNCE_MS` per session. The first touch for
- * a hash always writes; subsequent touches inside the window are skipped. See
- * `LAST_SEEN_TOUCH_DEBOUNCE_MS` for why the staleness is harmless.
+ * a hash always writes; subsequent touches inside the window are skipped.
  */
 async function touchSessionLastSeen(db: DbClient, idHash: string, now: number): Promise<void> {
   const lastTouched = lastSeenTouchedAt.get(idHash)
@@ -144,132 +111,10 @@ async function touchSessionLastSeen(db: DbClient, idHash: string, now: number): 
   `
 }
 
-export async function sessionRequiresMfa(db: DbClient, idHash: string): Promise<boolean> {
-  const row = await findSessionUserRow(db, idHash)
-  if (!row) return false
-  const user = rowToUser(row)
-  return user.mfaEnabled && row.session_mfa_passed_at == null
-}
-
-export async function findUserByPendingMfaSessionHash(
-  db: DbClient,
-  idHash: string,
-): Promise<AuthUser | null> {
-  const row = await findSessionUserRow(db, idHash)
-  if (!row) return null
-  const user = rowToUser(row)
-  if (!user.mfaEnabled || row.session_mfa_passed_at != null) return null
-  return user
-}
-
 export async function revokeSessionByHash(db: DbClient, idHash: string): Promise<void> {
   await db`
     update sessions
     set revoked_at = current_timestamp
     where id_hash = ${idHash}
-  `
-}
-
-/**
- * Read the `step_up_expires_at` column for a single live session. Used by
- * `requireStepUp` in `authz.ts` to decide whether the cookie's owner is
- * inside their fresh re-auth window.
- *
- * Returns `null` when the session doesn't exist, has been revoked, or has
- * never had a step-up grant. Callers must treat null as "needs step-up".
- */
-export async function getSessionStepUpExpiresAt(
-  db: DbClient,
-  idHash: string,
-): Promise<Date | null> {
-  const { rows } = await db<{ step_up_expires_at: Date | string | null }>`
-    select step_up_expires_at
-    from sessions
-    where id_hash = ${idHash}
-      and revoked_at is null
-    limit 1
-  `
-  const value = rows[0]?.step_up_expires_at ?? null
-  return value ? new Date(value) : null
-}
-
-export async function rotateSessionToken(
-  db: DbClient,
-  currentIdHash: string,
-  input: {
-    nextIdHash: string
-    mfaPassedAt?: Date | null
-    stepUpExpiresAt?: Date | null
-  },
-): Promise<RotatedSession | null> {
-  return db.transaction(async (tx) => {
-    const { rows } = await tx<SessionRotationRow>`
-      select user_id,
-             expires_at,
-             ip_address,
-             user_agent,
-             device_label,
-             mfa_passed_at,
-             step_up_expires_at
-      from sessions
-      where id_hash = ${currentIdHash}
-        and revoked_at is null
-      limit 1
-    `
-    const current = rows[0]
-    if (!current) return null
-
-    await tx`
-      update sessions
-      set revoked_at = current_timestamp
-      where id_hash = ${currentIdHash}
-        and revoked_at is null
-    `
-
-    const mfaPassedAt = input.mfaPassedAt !== undefined
-      ? input.mfaPassedAt
-      : current.mfa_passed_at
-    const stepUpExpiresAt = input.stepUpExpiresAt !== undefined
-      ? input.stepUpExpiresAt
-      : current.step_up_expires_at
-
-    await tx`
-      insert into sessions (
-        id_hash,
-        user_id,
-        expires_at,
-        ip_address,
-        user_agent,
-        device_label,
-        mfa_passed_at,
-        step_up_expires_at
-      )
-      values (
-        ${input.nextIdHash},
-        ${current.user_id},
-        ${dateValue(current.expires_at)},
-        ${current.ip_address},
-        ${current.user_agent},
-        ${current.device_label},
-        ${mfaPassedAt},
-        ${stepUpExpiresAt}
-      )
-    `
-
-    return { expiresAt: dateValue(current.expires_at) }
-  })
-}
-
-export async function markSessionMfaPassed(
-  db: DbClient,
-  idHash: string,
-  passedAt: Date = new Date(),
-): Promise<void> {
-  await db`
-    update sessions
-    set mfa_passed_at = ${passedAt},
-        last_seen_at = current_timestamp
-    where id_hash = ${idHash}
-      and revoked_at is null
   `
 }

@@ -1,10 +1,10 @@
 /**
  * AdminSectionNavigation — the row of section links shown inside the
- * editor toolbar (Site · Content · Data · Media · Users).
+ * editor toolbar (Site · Content · Data · Media).
  *
  * Lives next to the toolbar styles it consumes so both the heavy
  * AdminCanvasLayout (Site), AdminWorkspaceCanvasLayout (Content / Data /
- * Media), and the lightweight AdminPageLayout (Users / Account) can share it
+ * Media), and the lightweight AdminPageLayout (Account) can share it
  * without one layout pulling another layout's module graph in.
  */
 import { type MouseEvent, type ReactNode } from 'react'
@@ -12,7 +12,6 @@ import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
-import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import type { CmsCurrentUser } from '@core/persistence'
 import { Link, useLocation } from '@admin/lib/routing'
 import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
@@ -79,15 +78,6 @@ export function AdminSectionNavigation({
           icon={<ImagesSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
           label="Media"
           active={section === 'media'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('users') && (
-        <NavItem
-          to="/admin/users"
-          icon={<UsersSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Users"
-          active={section === 'users'}
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}

@@ -1,10 +1,9 @@
 /**
  * Sliding-window rate limiter — in-memory, per-process.
  *
- * Used to throttle login attempts on `/admin/api/cms/login`. The bucket key is a
- * `(client-ip, email)` tuple so a single attacker IP can be slowed down even
- * across many target accounts, AND a single account can be defended against
- * across many attacker IPs.
+ * A general-purpose throttle keyed by an arbitrary string. The bucket key is
+ * chosen by the caller (e.g. a client IP) so abusive callers can be slowed
+ * without penalising everyone.
  *
  * Storage is a `Map<key, number[]>` of attempt timestamps. Old entries fall
  * out of the window lazily on each access; `consume()` additionally runs an
@@ -136,45 +135,3 @@ export class RateLimiter {
     return this.buckets.size
   }
 }
-
-/**
- * Singleton rate limiter for the login endpoint.
- *
- * 5 attempts per 15-minute window per (ip, email) tuple. This blocks botnet
- * credential stuffing without burning legitimate users who fat-finger their
- * password a few times in a row.
- */
-export const loginRateLimit = new RateLimiter({
-  limit: 5,
-  windowMs: 15 * 60 * 1000,
-})
-
-/**
- * Per-IP login rate limiter — blanket protection against a single attacker
- * IP grinding through many email addresses.
- *
- * 30 attempts per 10-minute window per IP. Triggers BEFORE per-(IP, email)
- * does, so a sustained credential-stuffing run from one IP gets shut off
- * while legitimate users (who only attempt their own account) never see it.
- *
- * IP-less requests (no proxy, Bun.serve doesn't surface client IP) bypass
- * this layer — the per-(IP, email) limiter still applies, with `'unknown'`
- * as the IP component, so a single email is still defended.
- */
-export const loginPerIpRateLimit = new RateLimiter({
-  limit: 30,
-  windowMs: 10 * 60 * 1000,
-})
-
-/**
- * MFA verification limiter.
- *
- * Once the password has succeeded, a pending MFA session exists. TOTP codes
- * are only six digits, so the second-factor endpoint gets its own narrow
- * bucket. The key is the request IP when available, falling back to
- * `'unknown'` for local/dev requests.
- */
-export const mfaRateLimit = new RateLimiter({
-  limit: 10,
-  windowMs: 10 * 60 * 1000,
-})

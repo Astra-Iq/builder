@@ -28,6 +28,7 @@ export interface UserRow {
   password_hash: string
   status: UserStatus
   role_id: string
+  logto_subject: string | null
   last_login_at: Date | string | null
   failed_login_count: number
   locked_until: Date | string | null

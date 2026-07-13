@@ -4,7 +4,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { DataTable } from '@core/data/schemas'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { Page, PageNode } from '@core/page-tree'
-import { StepUpContext } from '@admin/shared/StepUp/StepUpContext'
 import { FormSettingsPanelView } from '@site/panels/PropertiesPanel/FormSettingsPanel'
 import { renderModuleTabContent } from '@site/panels/PropertiesPanel/renderModuleTabContent'
 import type { FormSettingsAnalysis } from '@site/panels/PropertiesPanel/formSettingsAnalysis'
@@ -447,24 +446,22 @@ describe('renderModuleTabContent form setup slot', () => {
     } as AnyModuleDefinition
 
     render(
-      <StepUpContext.Provider value={{ runStepUp: (action) => action() }}>
-        {renderModuleTabContent({
-          selectedNode: page.nodes.input!,
-          selectedNodeId: 'input',
-          definition,
-          resolvedPropsForBreakpoint: page.nodes.input!.props,
-          overrideKeys: new Set(),
-          activeDocument: null,
-          activePage: page,
-          dynamicBindingsEnabled: false,
-          enclosingLoopSource: undefined,
-          enclosingLoopTableId: null,
-          handleChange: () => undefined,
-          handlePatch: () => undefined,
-          onSetDynamicBinding: () => undefined,
-          onClearDynamicBinding: () => undefined,
-        })}
-      </StepUpContext.Provider>,
+      renderModuleTabContent({
+        selectedNode: page.nodes.input!,
+        selectedNodeId: 'input',
+        definition,
+        resolvedPropsForBreakpoint: page.nodes.input!.props,
+        overrideKeys: new Set(),
+        activeDocument: null,
+        activePage: page,
+        dynamicBindingsEnabled: false,
+        enclosingLoopSource: undefined,
+        enclosingLoopTableId: null,
+        handleChange: () => undefined,
+        handlePatch: () => undefined,
+        onSetDynamicBinding: () => undefined,
+        onClearDynamicBinding: () => undefined,
+      }),
     )
 
     const setupPanel = await waitFor(() => screen.getByTestId('form-settings-panel'))
@@ -504,24 +501,22 @@ describe('renderModuleTabContent form setup slot', () => {
 
     try {
       render(
-        <StepUpContext.Provider value={{ runStepUp: (action) => action() }}>
-          {renderModuleTabContent({
-            selectedNode: page.nodes.form!,
-            selectedNodeId: 'form',
-            definition,
-            resolvedPropsForBreakpoint: page.nodes.form!.props,
-            overrideKeys: new Set(),
-            activeDocument: null,
-            activePage: page,
-            dynamicBindingsEnabled: false,
-            enclosingLoopSource: undefined,
-            enclosingLoopTableId: null,
-            handleChange: () => undefined,
-            handlePatch: () => undefined,
-            onSetDynamicBinding: () => undefined,
-            onClearDynamicBinding: () => undefined,
-          })}
-        </StepUpContext.Provider>,
+        renderModuleTabContent({
+          selectedNode: page.nodes.form!,
+          selectedNodeId: 'form',
+          definition,
+          resolvedPropsForBreakpoint: page.nodes.form!.props,
+          overrideKeys: new Set(),
+          activeDocument: null,
+          activePage: page,
+          dynamicBindingsEnabled: false,
+          enclosingLoopSource: undefined,
+          enclosingLoopTableId: null,
+          handleChange: () => undefined,
+          handlePatch: () => undefined,
+          onSetDynamicBinding: () => undefined,
+          onClearDynamicBinding: () => undefined,
+        }),
       )
 
       await waitFor(() => screen.getByTestId('form-settings-panel'))

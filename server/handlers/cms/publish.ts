@@ -19,7 +19,7 @@
  * and the `plugins.install` / `plugins.lifecycle` mutation surface.
  */
 import type { DbClient } from '../../db/client'
-import { requireCapability, requireStepUp } from '../../auth/authz'
+import { requireCapability } from '../../auth/authz'
 import { createAuditEvent } from '../../repositories/audit'
 import { getDraftPublishStatus } from '../../repositories/publish'
 import { publishDraftSite } from '../../publish/publishSite'
@@ -38,8 +38,6 @@ export async function handlePublishRoutes(
     const user = await requireCapability(req, db, 'pages.publish')
     if (user instanceof Response) return user
     if (req.method !== 'POST') return methodNotAllowed()
-    const stepUp = await requireStepUp(req, db, user)
-    if (stepUp) return stepUp
 
     const result = await publishDraftSite(db, user.id, options.uploadsDir)
     await createAuditEvent(db, {

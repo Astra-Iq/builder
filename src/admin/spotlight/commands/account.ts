@@ -4,18 +4,21 @@
  * Sign out (destructive), navigate to account settings sections.
  */
 
-import { logoutCms } from '@core/persistence'
 import type { Command } from '../types'
+
+// GET route: revokes the local session and hands off to Logto's end-session
+// endpoint. Navigated to directly (hard navigation) so the redirect runs.
+const LOGOUT_URL = '/admin/api/cms/auth/logout'
 
 export function getAccountCommands(): Command[] {
   return [
     {
       id: 'account.profile',
-      title: 'Edit profile',
-      subtitle: 'Update your name, email, and avatar',
+      title: 'Account',
+      subtitle: 'View your identity',
       group: 'account',
       iconName: 'cursor-minimal-solid',
-      keywords: ['account', 'profile', 'edit', 'name', 'email', 'avatar'],
+      keywords: ['account', 'profile', 'identity', 'name', 'email'],
       workspaces: ['any'],
       run: (ctx) => {
         ctx.closeSpotlight()
@@ -26,20 +29,15 @@ export function getAccountCommands(): Command[] {
     {
       id: 'account.signOut',
       title: 'Sign out',
-      subtitle: 'End your current session',
+      subtitle: 'End your session and sign out of Logto',
       group: 'account',
       iconName: 'power-off',
       keywords: ['sign out', 'logout', 'log out', 'session', 'exit'],
       workspaces: ['any'],
       destructive: true,
-      run: async (ctx) => {
+      run: (ctx) => {
         ctx.closeSpotlight()
-        try {
-          await logoutCms()
-          window.location.assign('/admin')
-        } catch (err) {
-          console.error('[spotlight] sign out failed:', err)
-        }
+        window.location.assign(LOGOUT_URL)
       },
     },
   ]
