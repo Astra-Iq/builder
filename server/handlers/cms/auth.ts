@@ -42,6 +42,7 @@ import {
   type LogtoConfig,
 } from '../../auth/oidc'
 import { eligibleOrgs, extractLogtoClaims, provisionUserFromClaims } from '../../auth/logtoIdentity'
+import { ensureSiteHasHomePage } from '../../bootstrapSite'
 import { resolvePublicOrigins } from '../../config'
 import { jsonResponse, readValidatedBody, setCookieHeader } from '../../http'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
@@ -162,12 +163,15 @@ async function handleCallback(req: Request, db: DbClient): Promise<Response> {
     const user = await provisionUserFromClaims(db, claims)
     userId = user.id
 
-    // Sync every org where the user is Owner/Admin into a site + membership.
+    // Sync every org where the user is Owner/Admin into a site + membership,
+    // and make sure each site has a starter homepage to open (a freshly
+    // provisioned org site otherwise has no content — an empty editor).
     const eligible = eligibleOrgs(claims)
     let firstSiteId: string | null = null
     for (const org of eligible) {
       const siteId = await ensureSiteForOrg(db, { orgId: org.orgId, name: org.name })
       await upsertSiteMember(db, { siteId, userId, roleId: org.builderRoleId })
+      await ensureSiteHasHomePage(db, siteId)
       if (firstSiteId === null) firstSiteId = siteId
     }
     // One eligible org → enter it directly; zero or many → no current site yet
