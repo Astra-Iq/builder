@@ -9,6 +9,16 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
 
+/**
+ * The adopted single-install site id. Surfaces that are not yet org-aware —
+ * the plugin runtime content API, headless AI/MCP content tools, and public
+ * form submissions — bind their content reads/writes to this site until their
+ * own multi-tenancy phase plumbs a real site context through. The `/admin`
+ * editor is fully per-site and never uses this. Grep this constant to find the
+ * surfaces still to make tenant-aware.
+ */
+export const DEFAULT_SITE_ID = 'default'
+
 export interface SiteSummary {
   id: string
   logtoOrgId: string | null

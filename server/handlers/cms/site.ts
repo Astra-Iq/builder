@@ -21,8 +21,10 @@ export async function handleSiteRoutes(req: Request, db: DbClient): Promise<Resp
 
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, siteId)
   if (!shell) return jsonResponse({ error: 'draft site not found' }, { status: 404 })
   return jsonResponse({ site: shell })
 }

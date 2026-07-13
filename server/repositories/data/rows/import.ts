@@ -14,6 +14,8 @@ import type { DataRowCells, DataRowStatus } from '@core/data/schemas'
 
 export interface DataRowImportInput {
   id: string
+  /** The tenant that owns the imported row. */
+  siteId: string
   tableId: string
   cells: DataRowCells
   slug: string
@@ -35,11 +37,11 @@ export async function upsertDataRow(
   const updatedAt = input.updatedAt ?? new Date().toISOString()
   await db`
     insert into data_rows (
-      id, table_id, cells_json, slug, status,
+      id, site_id, table_id, cells_json, slug, status,
       published_at, created_at, updated_at
     )
     values (
-      ${input.id}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
+      ${input.id}, ${input.siteId}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
       ${input.publishedAt}, ${createdAt}, ${updatedAt}
     )
     on conflict (id) do update
@@ -69,11 +71,11 @@ export async function insertDataRowIfAbsent(
   const updatedAt = input.updatedAt ?? new Date().toISOString()
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
-      id, table_id, cells_json, slug, status,
+      id, site_id, table_id, cells_json, slug, status,
       published_at, created_at, updated_at
     )
     values (
-      ${input.id}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
+      ${input.id}, ${input.siteId}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
       ${input.publishedAt}, ${createdAt}, ${updatedAt}
     )
     on conflict do nothing
@@ -95,11 +97,11 @@ export async function replaceDataRow(
   const updatedAt = input.updatedAt ?? new Date().toISOString()
   await db`
     insert into data_rows (
-      id, table_id, cells_json, slug, status,
+      id, site_id, table_id, cells_json, slug, status,
       published_at, created_at, updated_at
     )
     values (
-      ${input.id}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
+      ${input.id}, ${input.siteId}, ${input.tableId}, ${input.cells}, ${input.slug}, ${input.status},
       ${input.publishedAt}, ${createdAt}, ${updatedAt}
     )
   `

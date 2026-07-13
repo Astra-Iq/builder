@@ -24,10 +24,10 @@ function createPublishFakeDb() {
   const db = createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    // saveDraftSite — insert or update site row (NOT site_snapshots)
-    if (sql.startsWith('insert into sites (')) {
+    // saveDraftSite — update the sites row (NOT site_snapshots)
+    if (sql.startsWith('update sites')) {
       state.site = {
-        id: 'default',
+        id: params[2],
         name: params[0],
         settings_json: params[1],
         created_at: new Date('2026-01-01').toISOString(),
@@ -43,13 +43,13 @@ function createPublishFakeDb() {
     if (sql.startsWith('insert into data_rows')) {
       const row = {
         id: params[0],
-        table_id: params[1],
-        cells_json: params[2],
-        slug: params[3],
-        status: params[4],
-        author_user_id: params[5],
-        created_by_user_id: params[6],
-        updated_by_user_id: params[7],
+        table_id: params[2],
+        cells_json: params[3],
+        slug: params[4],
+        status: params[5],
+        author_user_id: params[6],
+        created_by_user_id: params[7],
+        updated_by_user_id: params[8],
         active_version_id: null,
         published_by_user_id: null,
         published_at: null,
@@ -254,10 +254,11 @@ async function seedSiteAndPage(
   text: string,
 ) {
   const shell = makeSiteShell()
-  await saveDraftSite(db, shell)
+  await saveDraftSite(db, 'default', shell)
   const page = makeHomePage(text)
   await createDataRow(db, {
     id: page.id,
+    siteId: 'default',
     tableId: 'pages',
     cells: pageToCells(page),
     slug: page.slug,
@@ -269,7 +270,7 @@ describe('CMS publishing', () => {
     const { state, db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Published headline')
 
-    const result = await publishDraftSite(db, 'admin_1')
+    const result = await publishDraftSite(db, 'default', 'admin_1')
     const published = await getPublishedPageBySlug(db, 'index')
 
     expect(result).toMatchObject({ publishedPages: 1 })
@@ -280,7 +281,7 @@ describe('CMS publishing', () => {
   it('does not expose later draft changes until another publish occurs', async () => {
     const { db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Public version')
-    await publishDraftSite(db, 'admin_1')
+    await publishDraftSite(db, 'default', 'admin_1')
 
     // Update the draft page text
     await saveDataRowDraft(db, 'page_home', {
@@ -295,9 +296,9 @@ describe('CMS publishing', () => {
   it('reports that the current draft matches the active published snapshots after publishing', async () => {
     const { db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Public version')
-    await publishDraftSite(db, 'admin_1')
+    await publishDraftSite(db, 'default', 'admin_1')
 
-    const status = await getDraftPublishStatus(db)
+    const status = await getDraftPublishStatus(db, 'default')
 
     expect(status).toMatchObject({
       hasPublishedVersion: true,
@@ -311,7 +312,7 @@ describe('CMS publishing', () => {
   it('reports that the current draft no longer matches after a later draft save', async () => {
     const { db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Public version')
-    await publishDraftSite(db, 'admin_1')
+    await publishDraftSite(db, 'default', 'admin_1')
 
     // Update the draft to create mismatch
     await saveDataRowDraft(db, 'page_home', {
@@ -319,7 +320,7 @@ describe('CMS publishing', () => {
       slug: 'index',
     }, 'admin_1')
 
-    const status = await getDraftPublishStatus(db)
+    const status = await getDraftPublishStatus(db, 'default')
 
     expect(status).toMatchObject({
       hasPublishedVersion: true,
@@ -351,7 +352,7 @@ describe('CMS publishing', () => {
         },
       }),
     })
-    await saveDraftSite(db, shell)
+    await saveDraftSite(db, 'default', shell)
     const page = makeHomePage('Runtime page')
     await createDataRow(db, {
       id: page.id,
@@ -360,7 +361,7 @@ describe('CMS publishing', () => {
       slug: page.slug,
     }, 'admin_1')
 
-    await publishDraftSite(db, 'admin_1')
+    await publishDraftSite(db, 'default', 'admin_1')
     const published = await getPublishedPageBySlug(db, 'index')
 
     expect(state.runtimeAssets.length).toBeGreaterThan(0)

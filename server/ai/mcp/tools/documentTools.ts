@@ -14,6 +14,8 @@
  * no document is marked active/current; `get_context` reports the live editor.
  */
 import { Type } from '@core/utils/typeboxHelpers'
+import { DEFAULT_SITE_ID } from '../../../repositories/sites'
+
 import { describeAgentDocuments } from '@core/ai'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSiteDocument } from '../../../repositories/publish'
@@ -28,7 +30,7 @@ export const documentMcpTools: AiTool[] = [
     inputSchema: Type.Object({}, { additionalProperties: false }),
     requiredCapabilities: ['site.read'],
     handler: async (_input, ctx: ToolContext) => {
-      const site = await getDraftSiteDocument(ctx.db)
+      const site = await getDraftSiteDocument(ctx.db, DEFAULT_SITE_ID)
       if (!site) return { ok: false, error: 'No site found.' }
       return {
         currentDocument: null,

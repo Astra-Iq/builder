@@ -24,8 +24,8 @@ async function freshDb(): Promise<DbClient> {
   // Seed one page row into the (already-seeded) `pages` system table.
   const cells = JSON.stringify({ title: 'Home', slug: 'index', body: PAGE_TREE })
   await db`
-    insert into data_rows (id, table_id, cells_json, slug, status)
-    values ('home', 'pages', ${cells}, 'index', 'draft')
+    insert into data_rows (id, site_id, table_id, cells_json, slug, status)
+    values ('home', 'default', 'pages', ${cells}, 'index', 'draft')
   `
   return db
 }

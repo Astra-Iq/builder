@@ -1235,4 +1235,20 @@ export const sqliteMigrations: Migration[] = [
       update sessions set current_site_id = 'default' where current_site_id is null;
     `,
   },
+  {
+    // P3: adopt all existing content into the 'default' site. Lands with the
+    // repository write-path threading so existing rows and new writes share the
+    // same tenant-scoped unique-index partition. System `data_tables` stay
+    // global (site_id NULL).
+    id: '024_backfill_default_site_content',
+    sql: `
+      update data_tables set site_id = 'default'
+        where site_id is null and id not in ('pages', 'posts', 'components', 'layouts');
+      update data_rows set site_id = 'default' where site_id is null;
+      update data_row_versions set site_id = 'default' where site_id is null;
+      update data_row_redirects set site_id = 'default' where site_id is null;
+      update site_snapshots set site_id = 'default' where site_id is null;
+      update published_runtime_assets set site_id = 'default' where site_id is null;
+    `,
+  },
 ]

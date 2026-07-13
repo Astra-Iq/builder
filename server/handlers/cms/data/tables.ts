@@ -285,13 +285,15 @@ async function handleTableRows(
     ? await requireDataCreator(req, db)
     : await requireDataAccess(req, db)
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const table = await getDataTable(db, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   if (req.method === 'GET') {
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-    return jsonResponse({ rows: await listDataRows(db, tableId, visibility) })
+    return jsonResponse({ rows: await listDataRows(db, siteId, tableId, visibility) })
   }
 
   if (req.method === 'POST') {
@@ -316,7 +318,7 @@ async function handleTableRows(
     })
     const slug = slugForTable(table, cells)
 
-    const row = await createDataRow(db, { tableId, cells, slug }, user.id)
+    const row = await createDataRow(db, { siteId, tableId, cells, slug }, user.id)
     await emitContentEntryCreated(db, row.id, { kind: 'user', userId: user.id })
     await createAuditEvent(db, {
       actorUserId: user.id,

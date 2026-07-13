@@ -33,7 +33,7 @@ export async function ensureBootstrapSite(db: DbClient): Promise<void> {
     // user signs in and edits.
     await createDataRow(
       tx,
-      { id: homePage.id, tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
+      { id: homePage.id, siteId: 'default', tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
       null,
     )
   })

@@ -19,6 +19,8 @@
  */
 
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
+import { DEFAULT_SITE_ID } from '../../../repositories/sites'
+
 import type { ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk/contentSchemas'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import { parsePageNodeTree } from '@core/page-tree'
@@ -146,7 +148,7 @@ export async function handleContentTablesGet(
   // projection needs — no per-table COUNT subselects for tables we don't
   // return.
   const [rowCount, slugLookup] = await Promise.all([
-    countDataRows(db, table.id),
+    countDataRows(db, DEFAULT_SITE_ID, table.id),
     buildTableSlugLookup(db),
   ])
   replyApiOk(
@@ -228,7 +230,7 @@ export async function handleContentEntriesGetBySlug(
   const [tableSlug, slug] = msg.args
   assertContentTableAccess(entry, tableSlug, 'read')
   const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRowBySlug(db, table.id, slug)
+  const row = await getDataRowBySlug(db, DEFAULT_SITE_ID, table.id, slug)
   replyApiOk(msg.pluginId, msg.correlationId, row ? rowToEntry(row, tableSlug) : null)
 }
 
@@ -249,7 +251,7 @@ export async function handleContentEntriesCreate(
   const slug = input.slug ?? denormalizeSlug(table, cells)
   const created = await createDataRow(
     db,
-    { tableId: table.id, cells, slug },
+    { siteId: DEFAULT_SITE_ID, tableId: table.id, cells, slug },
     null,
     msg.pluginId,
   )
@@ -381,7 +383,7 @@ export async function handleContentEntriesCreateMany(
   const prepared = await Promise.all(inputs.map(async (input) => {
     const cells = await applyContentEntryCellsFilter(input.cells, { tableSlug, entryId: 'new', actor })
     const slug = input.slug ?? denormalizeSlug(table, cells)
-    return { tableId: table.id, cells, slug }
+    return { siteId: DEFAULT_SITE_ID, tableId: table.id, cells, slug }
   }))
   const created = await createDataRowMany(db, prepared, null, msg.pluginId)
   for (const row of created) {

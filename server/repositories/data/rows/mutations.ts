@@ -37,6 +37,7 @@ export async function createDataRow(
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
       id,
+      site_id,
       table_id,
       cells_json,
       slug,
@@ -48,6 +49,7 @@ export async function createDataRow(
     )
     values (
       ${input.id ?? nanoid()},
+      ${input.siteId},
       ${input.tableId},
       ${input.cells},
       ${input.slug},

@@ -31,6 +31,8 @@ export { placeholder }
 
 export interface InsertDataRowInput {
   id?: string
+  /** The tenant that owns this row. Content is scoped per site. */
+  siteId: string
   tableId: string
   cells: DataRowCells
   /**

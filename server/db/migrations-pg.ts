@@ -1185,4 +1185,22 @@ export const pgMigrations: Migration[] = [
       update sessions set current_site_id = 'default' where current_site_id is null;
     `,
   },
+  {
+    // P3: adopt all existing content into the 'default' site. Lands together
+    // with the repository write-path threading (createDataRow / the site shell
+    // now set site_id), so existing rows ('default') and new writes ('default')
+    // share the same tenant-scoped unique-index partition — no split, no
+    // duplicate slugs. System `data_tables` definitions stay global (site_id
+    // NULL); only content and custom tables carry a site.
+    id: '024_backfill_default_site_content',
+    sql: `
+      update data_tables set site_id = 'default'
+        where site_id is null and id not in ('pages', 'posts', 'components', 'layouts');
+      update data_rows set site_id = 'default' where site_id is null;
+      update data_row_versions set site_id = 'default' where site_id is null;
+      update data_row_redirects set site_id = 'default' where site_id is null;
+      update site_snapshots set site_id = 'default' where site_id is null;
+      update published_runtime_assets set site_id = 'default' where site_id is null;
+    `,
+  },
 ]

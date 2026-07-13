@@ -78,16 +78,18 @@ function createSnapshot(
 
 export async function publishDraftSite(
   db: DbClient,
+  siteId: string,
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
+  return withPublishLock(() => publishDraftSiteLocked(db, siteId, adminUserId, uploadsDir))
 }
 
 async function publishDraftSiteLocked(
   db: DbClient,
+  siteId: string,
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
@@ -98,7 +100,7 @@ async function publishDraftSiteLocked(
   // write (autosaves, row publishes) behind it. `withPublishLock` already
   // serializes publishes, and version numbers are only allocated by publish
   // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db)
+  const site = await getDraftSiteDocument(db, siteId)
   if (!site) throw new Error('draft site not found')
 
   const runtime = normalizeSiteRuntimeConfig(site.runtime)

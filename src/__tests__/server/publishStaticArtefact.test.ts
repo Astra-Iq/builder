@@ -323,7 +323,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     const db = buildFakeDb(staticPage, dynamicPage)
 
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    const result = await publishDraftSite(db, 'user-1', uploadsDir)
+    const result = await publishDraftSite(db, 'default', 'user-1', uploadsDir)
 
     expect(result.publishedPages).toBe(2)
 
@@ -390,7 +390,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
 
     const db = buildFakeDb(page, dynamicPage)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    const result = await publishDraftSite(db, 'user-1')  // no uploadsDir
+    const result = await publishDraftSite(db, 'default', 'user-1')  // no uploadsDir
 
     expect(result.publishedPages).toBe(2)
     // No symlink should exist
@@ -418,7 +418,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
 
     // First publish: writes to inactive slot (b), flips current → b
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, 'default', 'user-1', uploadsDir)
     const slotAfterFirst = await getActiveSlot(uploadsDir)
 
     // The other slot directory should still exist on disk (not wiped until next publish)
@@ -430,7 +430,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     expect(html).toContain('First publish')
 
     // Second publish: writes to inactive slot (the other one), flips current
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, 'default', 'user-1', uploadsDir)
     const slotAfterSecond = await getActiveSlot(uploadsDir)
 
     // Slots must have rotated

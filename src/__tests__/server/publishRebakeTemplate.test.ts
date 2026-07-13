@@ -128,7 +128,7 @@ describe('publishDraftSite — template re-bake', () => {
 
     const db = buildFakeDb(layout, about)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, 'default', 'user-1', uploadsDir)
 
     // /about is baked AND wrapped in the layout (MASTHEAD present + own body).
     const aboutHtml = await readArtefact(uploadsDir, '/about')

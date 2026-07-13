@@ -305,6 +305,7 @@ export async function insertDataTableIfAbsent(
  */
 export async function softDeleteDataTable(
   db: DbClient,
+  siteId: string,
   tableId: string,
   actorUserId: string | null = null,
 ): Promise<DataTable | null> {
@@ -312,7 +313,7 @@ export async function softDeleteDataTable(
   if (!table) return null
   if (table.system === true) return null
 
-  if (await countDataRows(db, tableId) > 0) return null
+  if (await countDataRows(db, siteId, tableId) > 0) return null
 
   const { rows } = await db<DataTableRow>`
     update data_tables

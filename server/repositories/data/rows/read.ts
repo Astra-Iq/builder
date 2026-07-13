@@ -33,12 +33,13 @@ interface DataAuthorRow {
 
 export async function listDataRows(
   db: DbClient,
+  siteId: string,
   tableId: string,
   visibility: ListDataRowsVisibility = {},
 ): Promise<DataRow[]> {
   const dataRows = await selectHydratedDataRows(db, {
-    where: `data_rows.table_id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`,
-    params: [tableId],
+    where: `data_rows.table_id = ${placeholder(db.dialect, 1)} and data_rows.site_id = ${placeholder(db.dialect, 2)} and data_rows.deleted_at is null`,
+    params: [tableId, siteId],
     tail: 'order by data_rows.updated_at desc, data_rows.created_at desc',
   })
   if (visibility.ownerUserId) {
@@ -61,11 +62,13 @@ interface DataRowIdSlug {
  */
 export async function listDataRowIdSlugs(
   db: DbClient,
+  siteId: string,
   tableId: string,
 ): Promise<DataRowIdSlug[]> {
   const { rows } = await db<DataRowIdSlug>`
     select id, slug from data_rows
     where table_id = ${tableId}
+      and site_id = ${siteId}
       and deleted_at is null
   `
   return rows
@@ -79,11 +82,13 @@ export async function listDataRowIdSlugs(
  */
 export async function listSoftDeletedDataRowIds(
   db: DbClient,
+  siteId: string,
   tableId: string,
 ): Promise<string[]> {
   const { rows } = await db<{ id: string }>`
     select id from data_rows
     where table_id = ${tableId}
+      and site_id = ${siteId}
       and deleted_at is not null
   `
   return rows.map((r) => r.id)
@@ -127,12 +132,14 @@ export async function getDataRowMany(
  */
 export async function getDataRowBySlug(
   db: DbClient,
+  siteId: string,
   tableId: string,
   slug: string,
 ): Promise<DataRow | null> {
   const { rows } = await db<{ id: string }>`
     select id from data_rows
     where table_id = ${tableId}
+      and site_id = ${siteId}
       and slug = ${slug}
       and deleted_at is null
     limit 1
@@ -140,12 +147,13 @@ export async function getDataRowBySlug(
   return rows[0] ? getDataRow(db, rows[0].id) : null
 }
 
-/** Count non-deleted rows in a table — one indexed COUNT. */
-export async function countDataRows(db: DbClient, tableId: string): Promise<number> {
+/** Count non-deleted rows in a table for a site — one indexed COUNT. */
+export async function countDataRows(db: DbClient, siteId: string, tableId: string): Promise<number> {
   const { rows } = await db<{ count: number | string }>`
     select count(*) as count
     from data_rows
     where table_id = ${tableId}
+      and site_id = ${siteId}
       and deleted_at is null
   `
   return Number(rows[0]?.count ?? 0)

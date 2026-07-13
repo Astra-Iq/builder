@@ -10,6 +10,7 @@ import {
   readValidatedBody,
 } from '../http'
 import { createDataRow, getDataTable } from '../repositories/data'
+import { DEFAULT_SITE_ID } from '../repositories/sites'
 import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
 import {
   PublicFormChallengeBodySchema,
@@ -134,6 +135,8 @@ async function handleSubmit(req: Request, db: DbClient): Promise<Response> {
   }
 
   const row = await createDataRow(db, {
+    // Forms are not yet org-scoped — submissions land in the default site.
+    siteId: DEFAULT_SITE_ID,
     tableId: table.id,
     cells: validation.cells,
     slug: '',

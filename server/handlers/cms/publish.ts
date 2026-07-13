@@ -38,13 +38,15 @@ export async function handlePublishRoutes(
     const user = await requireCapability(req, db, 'pages.publish')
     if (user instanceof Response) return user
     if (req.method !== 'POST') return methodNotAllowed()
+    const siteId = user.currentSiteId
+    if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
-    const result = await publishDraftSite(db, user.id, options.uploadsDir)
+    const result = await publishDraftSite(db, siteId, user.id, options.uploadsDir)
     await createAuditEvent(db, {
       actorUserId: user.id,
       action: 'publish',
       targetType: 'site',
-      targetId: 'default',
+      targetId: siteId,
       metadata: { publishedPages: result.publishedPages },
       ...requestAuditContext(req),
     })
@@ -55,8 +57,10 @@ export async function handlePublishRoutes(
     const user = await requireCapability(req, db, 'site.read')
     if (user instanceof Response) return user
     if (req.method !== 'GET') return methodNotAllowed()
+    const siteId = user.currentSiteId
+    if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
-    return jsonResponse(await getDraftPublishStatus(db))
+    return jsonResponse(await getDraftPublishStatus(db, siteId))
   }
 
   return null

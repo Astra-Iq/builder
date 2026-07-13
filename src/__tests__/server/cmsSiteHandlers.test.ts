@@ -45,6 +45,7 @@ function makeFakeDb() {
           role_capabilities_json: ['site.read', 'site.structure.edit','site.content.edit','site.style.edit', 'pages.edit'],
           session_mfa_passed_at: null,
           avatar_public_path: null,
+          current_site_id: 'default',
         } as Row] : [],
         rowCount: admin ? 1 : 0,
       }
@@ -52,10 +53,10 @@ function makeFakeDb() {
     if (normalized.includes('update sessions') && normalized.includes('last_seen_at')) {
       return { rows: [], rowCount: 1 }
     }
-    // saveDraftSite — insert into sites
-    if (normalized.includes('insert into sites (')) {
+    // saveDraftSite — update the sites row (distinct from `update sites set seq`)
+    if (normalized.includes('update sites set name')) {
       siteRow = {
-        id: 'default',
+        id: values[2],
         name: values[0],
         settings_json: values[1],
         created_at: new Date('2026-01-01').toISOString(),
