@@ -1174,4 +1174,15 @@ export const pgMigrations: Migration[] = [
         select 'default', id, role_id from users where deleted_at is null;
     `,
   },
+  {
+    // P2: the browser session records which site the signed-in user is currently
+    // editing. Nullable — a multi-org user has no current site until they pick
+    // one; per-request capabilities resolve from site_members(current_site_id).
+    // Backfill the adopted install's existing sessions to 'default'.
+    id: '023_sessions_current_site',
+    sql: `
+      alter table sessions add column current_site_id text;
+      update sessions set current_site_id = 'default' where current_site_id is null;
+    `,
+  },
 ]

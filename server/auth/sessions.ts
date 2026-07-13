@@ -44,12 +44,25 @@ export async function createSession(
     userAgent: string | null
     /** Optional device label; falls back to a UA-derived label, then ''. */
     deviceLabel?: string
+    /** The site this session starts editing (null until a multi-org user picks). */
+    currentSiteId?: string | null
   },
 ): Promise<void> {
   const deviceLabel = input.deviceLabel ?? deriveDeviceLabel(input.userAgent)
   await db`
-    insert into sessions (id_hash, user_id, expires_at, ip_address, user_agent, device_label)
-    values (${input.idHash}, ${input.userId}, ${input.expiresAt}, ${input.ipAddress}, ${input.userAgent}, ${deviceLabel})
+    insert into sessions (id_hash, user_id, expires_at, ip_address, user_agent, device_label, current_site_id)
+    values (${input.idHash}, ${input.userId}, ${input.expiresAt}, ${input.ipAddress}, ${input.userAgent}, ${deviceLabel}, ${input.currentSiteId ?? null})
+  `
+}
+
+/** Point a session at a different site (org switch). */
+export async function setSessionCurrentSite(
+  db: DbClient,
+  idHash: string,
+  siteId: string,
+): Promise<void> {
+  await db`
+    update sessions set current_site_id = ${siteId} where id_hash = ${idHash}
   `
 }
 
@@ -63,11 +76,19 @@ async function findSessionUserRow(
   // Joins through `sessions`, so it can't reuse the `queryUsers` FROM clause —
   // but it splices the same `USER_JOINED_COLUMNS` constant so the hydrated user
   // column list still lives in exactly one place.
+  // Capabilities resolve from the CURRENT site's membership role: join
+  // site_members on (current_site_id, user) and let the role join fall back to
+  // the global `users.role_id` baseline when there is no membership (no site
+  // selected, or access revoked) — the baseline is `member` (no capabilities),
+  // so a user with no current site cannot act until they pick one.
   const { rows } = await db.unsafe<JoinedUserRow>(
-    `select ${USER_JOINED_COLUMNS}
+    `select ${USER_JOINED_COLUMNS}, sessions.current_site_id as current_site_id
      from sessions
      join users on users.id = sessions.user_id
-     join roles on roles.id = users.role_id
+     left join site_members
+       on site_members.site_id = sessions.current_site_id
+      and site_members.user_id = users.id
+     join roles on roles.id = coalesce(site_members.role_id, users.role_id)
      left join media_assets on media_assets.id = users.avatar_media_id
      where sessions.id_hash = ${placeholder(db.dialect, 1)}
        and sessions.revoked_at is null

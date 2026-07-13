@@ -1225,4 +1225,14 @@ export const sqliteMigrations: Migration[] = [
         select 'default', id, role_id from users where deleted_at is null;
     `,
   },
+  {
+    // P2: the browser session records which site the signed-in user is currently
+    // editing. Nullable until a multi-org user picks one; per-request
+    // capabilities resolve from site_members(current_site_id).
+    id: '023_sessions_current_site',
+    sql: `
+      alter table sessions add column current_site_id text;
+      update sessions set current_site_id = 'default' where current_site_id is null;
+    `,
+  },
 ]

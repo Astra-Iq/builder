@@ -3,6 +3,7 @@ import type { CmsCurrentUser } from '@core/persistence'
 import { AppLoadingScreen } from './AppLoadingScreen'
 import type { AdminWorkspace } from './workspace'
 import { useAdminBoot } from './preauth/useAdminBoot'
+import { AccessUnavailable, SitePicker } from './preauth/SiteGate'
 import { prewarmedLazy } from './lib/prewarmedLazy'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 
@@ -58,15 +59,23 @@ export default function AdminEntry({ section = 'site' }: AdminEntryProps) {
   useEditorAppearancePreferences()
   const boot = useAdminBoot()
 
-  // Authenticated → render the editor. Loading, or unauthenticated (in which
-  // case `useAdminBoot` is redirecting the browser to Logto), shows the loading
-  // screen — there is no in-app login form.
+  // Authenticated with a current site → render the editor. The two multi-tenant
+  // gates sit between sign-in and the editor; loading / unauthenticated (where
+  // `useAdminBoot` is redirecting to Logto) show the loading screen.
   if (boot.status === 'authenticated' && boot.currentUser) {
     return (
       <Suspense fallback={<AppLoadingScreen />}>
         <AuthenticatedAdmin section={section} currentUser={boot.currentUser} />
       </Suspense>
     )
+  }
+
+  if (boot.status === 'needs-site') {
+    return <SitePicker sites={boot.availableSites} />
+  }
+
+  if (boot.status === 'no-access') {
+    return <AccessUnavailable />
   }
 
   return <AppLoadingScreen />

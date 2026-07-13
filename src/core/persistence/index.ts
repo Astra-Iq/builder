@@ -52,10 +52,14 @@ export {
 export {
   getCmsPublicSite,
   getCurrentCmsUser,
+  getCurrentCmsSession,
+  switchCmsSite,
   probeCmsSession,
 } from './cmsAuth'
 export type {
   CmsCurrentUser,
+  CmsSession,
+  CmsAvailableSite,
 } from './cmsAuth'
 
 // usePersistence moved to src/editor/hooks/usePersistence.ts (Constraint #179 — no React in core)

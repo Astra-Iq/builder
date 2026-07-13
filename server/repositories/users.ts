@@ -40,6 +40,12 @@ interface CmsUser {
 export interface AuthUser extends CmsUser {
   /** The Logto subject this local identity shadows (null for legacy rows). */
   logtoSubject: string | null
+  /**
+   * The site the session is currently editing, or null when none is selected
+   * (a multi-org user before they pick, or a user with no eligible site). Only
+   * populated by the session-cookie hydration; null from `findUserById`.
+   */
+  currentSiteId: string | null
 }
 
 export interface JoinedUserRow {
@@ -60,6 +66,8 @@ export interface JoinedUserRow {
   role_is_system: boolean | number
   role_capabilities_json: unknown
   avatar_public_path: string | null
+  /** Only selected by the session-cookie hydration; undefined elsewhere. */
+  current_site_id?: string | null
 }
 
 /**
@@ -74,7 +82,7 @@ export const USER_JOINED_COLUMNS = `users.id,
        users.email,
        users.display_name,
        users.status,
-       users.role_id,
+       roles.id as role_id,
        users.logto_subject,
        users.last_login_at,
        users.avatar_media_id,
@@ -134,6 +142,7 @@ export function rowToUser(row: JoinedUserRow): AuthUser {
     role,
     capabilities,
     logtoSubject: row.logto_subject ?? null,
+    currentSiteId: row.current_site_id ?? null,
     lastLoginAt: isoDateOrNull(row.last_login_at),
     avatarMediaId: row.avatar_media_id ?? null,
     avatarUrl: row.avatar_public_path ?? null,
