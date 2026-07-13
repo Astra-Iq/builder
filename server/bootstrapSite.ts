@@ -16,7 +16,7 @@ import type { Page } from '@core/page-tree'
 import { pageToCells } from '../src/core/data/pageFromRow'
 
 export async function ensureBootstrapSite(db: DbClient): Promise<void> {
-  const { rows } = await db<{ count: number }>`select count(*) as count from site`
+  const { rows } = await db<{ count: number }>`select count(*) as count from sites`
   if (Number(rows[0]?.count ?? 0) > 0) return
 
   await db.transaction(async (tx) => {

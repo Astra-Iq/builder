@@ -10,7 +10,7 @@ describe('CMS repositories', () => {
     const { db, cleanup } = await createTestDb()
     try {
       await createSite(db, 'Example Site', {})
-      const { rows } = await db<{ name: string }>`select name from site where id = 'default'`
+      const { rows } = await db<{ name: string }>`select name from sites where id = 'default'`
       expect(rows[0]?.name).toBe('Example Site')
     } finally {
       await cleanup()

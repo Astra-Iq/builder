@@ -6,8 +6,8 @@ export async function createSite(
   settings: Record<string, unknown>,
 ): Promise<void> {
   await db`
-    insert into site (id, name, settings_json)
-    values ('default', ${name}, ${settings})
+    insert into sites (id, name, slug, settings_json)
+    values ('default', ${name}, 'default', ${settings})
     on conflict (id) do update
       set name = excluded.name,
           settings_json = excluded.settings_json,

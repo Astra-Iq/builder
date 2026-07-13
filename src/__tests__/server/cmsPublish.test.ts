@@ -25,7 +25,7 @@ function createPublishFakeDb() {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
 
     // saveDraftSite — insert or update site row (NOT site_snapshots)
-    if (sql.startsWith('insert into site (')) {
+    if (sql.startsWith('insert into sites (')) {
       state.site = {
         id: 'default',
         name: params[0],

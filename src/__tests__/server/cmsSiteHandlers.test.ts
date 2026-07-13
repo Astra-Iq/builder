@@ -52,8 +52,8 @@ function makeFakeDb() {
     if (normalized.includes('update sessions') && normalized.includes('last_seen_at')) {
       return { rows: [], rowCount: 1 }
     }
-    // saveDraftSite — insert into site
-    if (normalized.includes('insert into site')) {
+    // saveDraftSite — insert into sites
+    if (normalized.includes('insert into sites (')) {
       siteRow = {
         id: 'default',
         name: values[0],
@@ -72,7 +72,7 @@ function makeFakeDb() {
       return { rows: [{ seq: 1 } as unknown as Row], rowCount: 1 }
     }
     // stampDraftSiteSeq
-    if (normalized.includes('update site set seq')) {
+    if (normalized.includes('update sites set seq')) {
       return { rows: [], rowCount: 1 }
     }
     // listDataRows / listDataRowIdSlugs / listSoftDeletedDataRowIds — this

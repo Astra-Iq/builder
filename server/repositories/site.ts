@@ -70,7 +70,7 @@ function readStoredShell(row: SiteRow): SiteShell {
 export async function getDraftSite(db: DbClient): Promise<SiteShell | null> {
   const { rows } = await db<SiteRow>`
     select id, name, settings_json, created_at, updated_at
-    from site
+    from sites
     where id = 'default'
     limit 1
   `
@@ -87,7 +87,7 @@ export async function saveDraftSite(
   _actorUserId: string | null = null,
 ): Promise<void> {
   await db`
-    insert into site (id, name, settings_json)
+    insert into sites (id, name, settings_json)
     values ('default', ${shell.name}, ${shellToStorage(shell)})
     on conflict (id) do update
       set name = excluded.name,
@@ -104,7 +104,7 @@ export async function saveDraftSite(
  */
 export async function stampDraftSiteSeq(db: DbClient, seq: number): Promise<void> {
   await db`
-    update site
+    update sites
     set seq = ${seq}
     where id = 'default'
   `

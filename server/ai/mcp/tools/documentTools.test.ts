@@ -18,8 +18,8 @@ async function freshDb(): Promise<DbClient> {
   await runMigrations(db, sqliteMigrations)
   // The default site shell row is created at first-run setup, not by migrations.
   await db`
-    insert into site (id, name, settings_json)
-    values ('default', 'Test', ${{ cmsSiteSchemaVersion: 1, site: {} }})
+    insert into sites (id, name, slug, settings_json)
+    values ('default', 'Test', 'default', ${{ cmsSiteSchemaVersion: 1, site: {} }})
   `
   // Seed one page row into the (already-seeded) `pages` system table.
   const cells = JSON.stringify({ title: 'Home', slug: 'index', body: PAGE_TREE })

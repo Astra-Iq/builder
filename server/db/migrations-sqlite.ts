@@ -1149,4 +1149,80 @@ export const sqliteMigrations: Migration[] = [
       drop index if exists users_single_active_owner_idx;
     `,
   },
+  {
+    // Multi-tenant foundation (P1): one Logto Organization = one site.
+    // See migrations-pg.ts for the full rationale. System `data_tables`
+    // definitions stay global (site_id NULL); content and custom tables are
+    // per-site. Content `site_id` is left NULL here — the adopted install is
+    // backfilled to 'default' and repository writes/queries are rewired together
+    // in a later phase, so the tenant-scoped unique indexes reduce to the exact
+    // pre-migration keys until then. `site_id` is nullable + FK-less here
+    // (additive/non-destructive); not-null is enforced at the app boundary + the
+    // isolation architecture test.
+    id: '022_multi_tenant_sites',
+    sql: `
+      alter table site rename to sites;
+      alter table sites add column logto_org_id text;
+      alter table sites add column slug text;
+      alter table sites add column status text not null default 'active';
+      update sites set slug = 'default' where slug is null;
+      create unique index if not exists sites_logto_org_id_idx
+        on sites (logto_org_id) where logto_org_id is not null;
+      create unique index if not exists sites_slug_idx
+        on sites (slug) where slug is not null;
+
+      -- site_id on every tenant-scoped table (content, media, plugins, ai).
+      -- Columns only — no backfill (see the note above).
+      alter table data_tables add column site_id text;
+      alter table data_rows add column site_id text;
+      alter table data_row_versions add column site_id text;
+      alter table data_row_redirects add column site_id text;
+      alter table site_snapshots add column site_id text;
+      alter table published_runtime_assets add column site_id text;
+      alter table media_assets add column site_id text;
+      alter table media_folders add column site_id text;
+      alter table media_asset_folders add column site_id text;
+      alter table media_smart_folders add column site_id text;
+      alter table media_usage_refs add column site_id text;
+      alter table installed_plugins add column site_id text;
+      alter table plugin_records add column site_id text;
+      alter table plugin_crash_events add column site_id text;
+      alter table plugin_schedules add column site_id text;
+      alter table plugin_schedule_runs add column site_id text;
+      alter table plugin_secrets add column site_id text;
+      alter table ai_conversations add column site_id text;
+      alter table ai_messages add column site_id text;
+      alter table ai_mcp_connectors add column site_id text;
+      alter table ai_defaults add column site_id text;
+      alter table audit_events add column site_id text;
+
+      -- Tenant-scoped unique indexes replace the install-global ones.
+      drop index if exists data_tables_slug_active_idx;
+      create unique index if not exists data_tables_site_slug_active_idx
+        on data_tables (coalesce(site_id, ''), slug) where deleted_at is null;
+      drop index if exists data_rows_table_slug_active_idx;
+      create unique index if not exists data_rows_site_table_slug_active_idx
+        on data_rows (coalesce(site_id, ''), table_id, slug)
+        where deleted_at is null and slug <> '';
+      -- data_row_redirects_source_idx is left as-is: it is the target of an
+      -- "on conflict (from_route_base, from_slug)" upsert, reshaped later with it.
+      drop index if exists media_folders_parent_slug_idx;
+      create unique index if not exists media_folders_site_parent_slug_idx
+        on media_folders (coalesce(site_id, ''), coalesce(parent_id, ''), slug);
+
+      -- (user, site) -> role association, re-synced from Logto at login.
+      create table if not exists site_members (
+        site_id text not null,
+        user_id text not null references users(id) on delete cascade,
+        role_id text not null references roles(id) on delete restrict,
+        source text not null default 'logto',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        primary key (site_id, user_id)
+      );
+      create index if not exists site_members_user_idx on site_members (user_id);
+      insert into site_members (site_id, user_id, role_id)
+        select 'default', id, role_id from users where deleted_at is null;
+    `,
+  },
 ]
