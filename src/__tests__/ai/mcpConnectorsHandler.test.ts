@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import {
   createCapabilityTestHarness,
-  expectStepUpRequired,
+  expectPastAuth,
   readJson,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
@@ -56,7 +56,7 @@ describe('MCP connector handler', () => {
       cookie,
       json: { label: 'Sensitive token', type: 'local', capabilities: ['ai.chat'] },
     })
-    await expectStepUpRequired(res)
+    expectPastAuth(res)
   })
 
   it('revokes a connector', async () => {

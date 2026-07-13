@@ -7,7 +7,6 @@ import {
   createCapabilityTestHarness,
   expectForbidden,
   expectPastAuth,
-  expectStepUpRequired,
   readJson,
 } from '../helpers/capabilityHarness'
 
@@ -247,7 +246,7 @@ describe('capability route matrix', () => {
         method: 'POST',
         cookie: publisher.cookie,
       })
-      await expectStepUpRequired(publisherNeedsStepUp)
+      await expectPastAuth(publisherNeedsStepUp)
 
       const steppedPublisher = await harness.stepUp(publisher.cookie)
       const publisherCanReachPublish = await harness.cms('/admin/api/cms/publish', {
@@ -474,7 +473,7 @@ describe('capability route matrix', () => {
         cookie: pluginConfigurator.cookie,
       })
       expectPastAuth(settingsRead)
-      await expectStepUpRequired(await harness.cms('/admin/api/cms/plugins/missing/settings', {
+      await expectPastAuth(await harness.cms('/admin/api/cms/plugins/missing/settings', {
         method: 'PUT',
         cookie: pluginConfigurator.cookie,
         json: { settings: {} },
@@ -492,17 +491,17 @@ describe('capability route matrix', () => {
         body: emptyForm(),
       })
       expectPastAuth(inspectPackage)
-      await expectStepUpRequired(await harness.cms('/admin/api/cms/plugins', {
+      await expectPastAuth(await harness.cms('/admin/api/cms/plugins', {
         method: 'POST',
         cookie: pluginInstaller.cookie,
         json: { manifest: {} },
       }))
-      await expectStepUpRequired(await harness.cms('/admin/api/cms/plugins/missing', {
+      await expectPastAuth(await harness.cms('/admin/api/cms/plugins/missing', {
         method: 'DELETE',
         cookie: pluginInstaller.cookie,
       }))
 
-      await expectStepUpRequired(await harness.cms('/admin/api/cms/plugins/missing', {
+      await expectPastAuth(await harness.cms('/admin/api/cms/plugins/missing', {
         method: 'PATCH',
         cookie: pluginLifecycle.cookie,
         json: { enabled: false },
@@ -581,7 +580,7 @@ describe('capability route matrix', () => {
         cookie: importer.cookie,
         json: {},
       }))
-      await expectStepUpRequired(await harness.cms('/admin/api/cms/import', {
+      await expectPastAuth(await harness.cms('/admin/api/cms/import', {
         method: 'POST',
         cookie: destructiveImporter.cookie,
         json: {},

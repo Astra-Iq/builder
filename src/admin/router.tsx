@@ -63,7 +63,6 @@ export function AdminRoutes() {
           panels, toolbar buttons, sandbox) is untouched. */}
       <Route path="/admin/plugins" element={<Navigate to="/admin/site" replace />} />
       <Route path="/admin/plugins/:pluginId/:pageId" element={<Navigate to="/admin/site" replace />} />
-      <Route path="/admin/users" element={withRouteBoundary(<AdminEntry section="users" />)} />
       <Route path="/admin/ai" element={withRouteBoundary(<AdminEntry section="ai" />)} />
       <Route path="/admin/account" element={withRouteBoundary(<AdminEntry section="account" />)} />
       {/* Catch-all for ADMIN paths only — an unknown /admin URL (typo, stale

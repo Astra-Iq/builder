@@ -215,16 +215,17 @@ describe('admin API security boundary', () => {
         await harness.setupOwner()
 
         for (const origin of ['https://cms.example.com', 'https://site.onrender.com']) {
-          const response = await harness.cms('/admin/api/cms/login', {
+          // A state-changing CMS request from an allowed public origin must
+          // pass the CSRF origin check (never 403) and reach the auth gate —
+          // unauthenticated, that gate returns 401, not the 403 the CSRF check
+          // would emit for a bad origin.
+          const response = await harness.cms('/admin/api/cms/publish', {
             method: 'POST',
             headers: { origin },
-            json: { email: 'owner@example.com', password: 'wrong-password' },
           })
 
           expect(response.status).not.toBe(403)
-          expect(await readJson<{ error: string }>(response)).toEqual({
-            error: 'Invalid email or password',
-          })
+          expect(response.status).toBe(401)
         }
       } finally {
         await harness.cleanup()

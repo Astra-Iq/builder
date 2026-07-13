@@ -2,19 +2,10 @@ import { describe, expect, it } from 'bun:test'
 import {
   SESSION_COOKIE_NAME,
   createSessionToken,
-  hashPassword,
   hashSessionToken,
-  verifyPassword,
 } from '../../../server/auth/tokens'
 
-describe('CMS auth primitives', () => {
-  it('hashes and verifies passwords', async () => {
-    const hash = await hashPassword('correct horse battery staple')
-    expect(hash).not.toBe('correct horse battery staple')
-    expect(await verifyPassword('correct horse battery staple', hash)).toBe(true)
-    expect(await verifyPassword('wrong password', hash)).toBe(false)
-  })
-
+describe('CMS session token primitives', () => {
   it('generates opaque session tokens and stores only hashes', async () => {
     const token = createSessionToken()
     const hash = await hashSessionToken(token)

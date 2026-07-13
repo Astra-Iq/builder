@@ -45,21 +45,6 @@ describe('server router', () => {
     expect(await res.json()).toMatchObject({ status: 'ok' })
   })
 
-  it('routes cms setup status', async () => {
-    const res = await handleServerRequest(new Request('http://localhost/admin/api/cms/setup/status'), { db: makeFakeDb() })
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ needsSetup: true })
-  })
-
-  it('redirects unmatched public routes to /admin on a fresh install', async () => {
-    const res = await handleServerRequest(
-      new Request('http://localhost/'),
-      { db: makeFakeDb({ site: 0, owners: 0 }) },
-    )
-    expect(res.status).toBe(302)
-    expect(res.headers.get('location')).toBe('/admin')
-  })
-
   it('returns 404 for unknown routes once setup is complete', async () => {
     const res = await handleServerRequest(
       new Request('http://localhost/nope'),

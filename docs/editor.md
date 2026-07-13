@@ -9,9 +9,9 @@ The frontend is a single React 19 + Vite SPA mounted at `/admin`. Inside it, two
 ## TL;DR
 
 - **Entry:** `src/admin/main.tsx` mounts `<Router><AdminRoutes /></Router><AdminContextMenuGuard />` with React 19 root-level error callbacks. `flushSync` forces the initial render synchronous to cut LCP.
-- **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. Workspace/page routes are wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`, with root redirects plus a final `path="/admin/*"` catch-all redirecting unknown admin URLs to `/admin/site` (login form when unauthenticated) instead of rendering an empty tree. Public-site 404s are NOT claimed — the publish pipeline's NotFound handling owns those.
+- **Router:** `src/admin/lib/routing/` — in-house router replacing `react-router-dom`. Workspace/page routes are wrapped in a per-route `<ErrorBoundary>` and `<Suspense>`, with root redirects plus a final `path="/admin/*"` catch-all redirecting unknown admin URLs to `/admin/site` instead of rendering an empty tree. Unauthenticated visitors are redirected to Logto (`/admin/api/cms/auth/login`), not an in-app form. Public-site 404s are NOT claimed — the publish pipeline's NotFound handling owns those.
 - **Cold path:** entry chunk is tiny. `AuthenticatedAdmin` is `React.lazy` and only loads post-login. Each workspace page is wrapped in `prewarmedLazy(...)`: the active page fires its import at module evaluation; the remaining pages pre-warm via `requestIdleCallback` after first paint so subsequent nav is synchronous (no Suspense flicker).
-- **Workspaces:** `site` (the editor — the admin home), `content`, `data`, `media`, `users`, `ai`, `account`. `plugins`/`pluginPage` remain valid workspace types but the workspace is hidden (its routes redirect to `/admin/site`; the plugin engine is untouched). Capability-gated by `canAccessWorkspace`.
+- **Workspaces:** `site` (the editor — the admin home), `content`, `data`, `media`, `ai`, `account`. `plugins`/`pluginPage` remain valid workspace types but the workspace is hidden (its routes redirect to `/admin/site`; the plugin engine is untouched). User/role management is gone — identities come from Logto (see [features/auth-and-access.md](features/auth-and-access.md)). Capability-gated by `canAccessWorkspace`.
 - **Editor store** lives at `src/admin/pages/site/store/`. Zustand + Mutative (`zustand-mutative`) + `subscribeWithSelector`. 12 slices, one source of truth for the page tree. Undo/redo uses patch-based history (O(change) per step, not O(site)).
 - **Active tree routing:** `mutateActiveTree(fn)` in `src/admin/pages/site/store/slices/site/helpers.ts` is the **only** place that branches on page-mode vs. VC-mode. The 11 named mutation actions are one-liners that delegate to it.
 - **Canvas:** `src/admin/pages/site/canvas/` renders the page tree into per-breakpoint `IframeFrameSurface` iframes. Two views: **design** (multiple breakpoints side-by-side with pan/zoom) and **live** (single real-size editable frame with normal scrolling). Design mode paints iframe shells with detailed skeletons first, mounts the active breakpoint's node tree after the first paint, then fills inactive breakpoint frames on idle time. Three canvas ring tokens: `--canvas-selection-ring` (neon green, selected node), `--canvas-hover-ring` (neon pink, hovered node), `--canvas-selector-ring` (neon orange, selector-panel match sweep).
@@ -89,7 +89,6 @@ The route table (`src/admin/router.tsx`):
 | `/admin/media`                          | `<AdminEntry section="media" />` |
 | `/admin/plugins` → redirect to `/admin/site` | `<Navigate />` (workspace hidden) |
 | `/admin/plugins/:pluginId/:pageId` → redirect to `/admin/site` | `<Navigate />` (workspace hidden) |
-| `/admin/users`                          | `<AdminEntry section="users" />` |
 | `/admin/ai`                             | `<AdminEntry section="ai" />` (AI credentials, models, defaults) |
 | `/admin/account`                        | `<AdminEntry section="account" />` |
 
@@ -231,9 +230,8 @@ src/admin/
     ├── data/                   ← data_tables management (see docs/features/data-workspace.md)
     ├── media/                  ← media manager
     ├── plugins/                ← plugin install / configure (workspace hidden; routes redirect to /admin/site)
-    ├── users/                  ← user management
     ├── ai/                     ← AI credentials, defaults, usage audit
-    ├── account/                ← own-account settings
+    ├── account/                ← read-only identity + sign out (identity managed in Logto)
     └── ...
 ```
 

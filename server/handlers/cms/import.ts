@@ -34,7 +34,7 @@ import {
   validateAndSanitizeMediaBytes,
   resolveMediaWriteTarget,
 } from './importMediaValidation'
-import { requireCapability, requireStepUp, userHasCapability } from '../../auth/authz'
+import { requireCapability, userHasCapability } from '../../auth/authz'
 import { saveDraftSite } from '../../repositories/site'
 import {
   listDataTables,
@@ -126,8 +126,6 @@ export async function handleImportRoute(
     if (!userHasCapability(user, 'content.manage')) {
       return jsonResponse({ error: 'Forbidden' }, { status: 403 })
     }
-    const stepUp = await requireStepUp(req, db, user)
-    if (stepUp) return stepUp
   }
 
   // Parse and validate the bundle body

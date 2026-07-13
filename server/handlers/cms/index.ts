@@ -32,11 +32,7 @@ import { isStateChangingMethod, originAllowed } from '../../auth/security'
 import type { CmsHandlerOptions } from './shared'
 import { handleSetupRoutes } from './setup'
 import { handleAuthRoutes } from './auth'
-import { handleMeRoutes } from './me'
 import { handleUserPreferencesRoutes } from './userPreferences'
-import { handleUsersRoutes } from './users'
-import { handleRolesRoutes } from './roles'
-import { handleAuditRoutes } from './audit'
 import { handleSiteRoutes } from './site'
 import { handleSiteDocumentRoutes } from './siteDocument'
 import { handlePagesRoutes } from './pages'
@@ -77,15 +73,10 @@ export async function handleCmsRequest(
   // try the next one".
   const response =
     (await handleSetupRoutes(req, db))
-    ?? (await handleMeRoutes(req, db, options))
     ?? (await handleAuthRoutes(req, db))
-    // User preferences sit next to /me/* because they share the same
-    // self-targeted "anything an authenticated user can do to their own
-    // account" surface. Routes mount under `/admin/api/cms/me/preferences/`.
+    // Self-service user preferences (editor UI prefs) mount under
+    // `/admin/api/cms/me/preferences/` — the one remaining `/me/*` surface.
     ?? (await handleUserPreferencesRoutes(req, db))
-    ?? (await handleUsersRoutes(req, db))
-    ?? (await handleRolesRoutes(req, db))
-    ?? (await handleAuditRoutes(req, db))
     ?? (await handleSiteRoutes(req, db))
     // The transactional whole-document save — must run before the pages/
     // components/layouts GET handlers only for tidiness; paths are distinct.

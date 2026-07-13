@@ -1,12 +1,19 @@
 import { expect } from 'bun:test'
 import type { CoreCapability } from '../../../server/auth/capabilities'
-import { SESSION_COOKIE_NAME } from '../../../server/auth/tokens'
+import {
+  SESSION_COOKIE_NAME,
+  createSessionToken,
+  hashSessionToken,
+  sessionExpiry,
+} from '../../../server/auth/tokens'
+import { createSession } from '../../../server/auth/sessions'
+import { ensureBootstrapSite } from '../../../server/bootstrapSite'
+import { syncSystemRoles, createCustomRole } from '../../../server/repositories/roles'
+import { upsertUserByLogtoSubject } from '../../../server/repositories/users'
 import type { DbClient } from '../../../server/db'
 import { handleCmsRequest, type CmsHandlerOptions } from '../../../server/handlers/cms'
 import { tryHandleAi } from '../../../server/ai/handlers'
 import { createTestDb, type TestDb } from './createTestDb'
-
-const CAPABILITY_TEST_PASSWORD = 'long-enough-password'
 
 let harnessSerial = 0
 
@@ -22,11 +29,23 @@ interface TestRoleUser {
   roleId: string
 }
 
+/**
+ * Auth in these tests no longer flows through a password login endpoint — Logto
+ * owns authentication. The harness provisions identities + sessions directly
+ * against the DB (the same primitives the OIDC callback uses at runtime:
+ * `upsertUserByLogtoSubject` + `createSession`), then drives the CMS/AI handlers
+ * with the resulting session cookie.
+ */
 export interface CapabilityTestHarness extends TestDb {
   cms(path: string, options?: HarnessRequestInit): Promise<Response>
   ai(path: string, options?: HarnessRequestInit): Promise<Response>
   setupOwner(): Promise<string>
   sessionForEmail(email: string): Promise<string>
+  /**
+   * Step-up is gone (Logto owns auth); the plain session cookie already
+   * authorizes every action. Retained as a pass-through so call sites that
+   * previously "stepped up" a cookie keep working unchanged.
+   */
   stepUp(cookie: string): Promise<string>
   createRole(input: {
     name: string
@@ -37,7 +56,7 @@ export interface CapabilityTestHarness extends TestDb {
     email: string
     displayName?: string
     roleId: string
-  }): Promise<void>
+  }): Promise<string>
   createRoleUser(input: {
     name: string
     slug: string
@@ -76,19 +95,21 @@ export async function expectForbidden(res: Response): Promise<void> {
   expect(body.error).toBe('Forbidden')
 }
 
-async function expectUnauthorized(res: Response): Promise<void> {
-  expect(res.status).toBe(401)
-}
-
-export async function expectStepUpRequired(res: Response): Promise<void> {
-  expect(res.status).toBe(401)
-  const body = await readJson<{ error?: string }>(res)
-  expect(body.error).toBe('step_up_required')
-}
-
 export function expectPastAuth(res: Response): void {
   expect(res.status).not.toBe(401)
   expect(res.status).not.toBe(403)
+}
+
+async function mintSession(db: DbClient, userId: string): Promise<string> {
+  const token = createSessionToken()
+  await createSession(db, {
+    idHash: await hashSessionToken(token),
+    userId,
+    expiresAt: sessionExpiry(),
+    ipAddress: null,
+    userAgent: null,
+  })
+  return `${SESSION_COOKIE_NAME}=${token}`
 }
 
 export async function createCapabilityTestHarness(
@@ -99,6 +120,10 @@ export async function createCapabilityTestHarness(
   const emailSuffix = `${Date.now()}-${++harnessSerial}`
   const ownerEmail = `owner-${emailSuffix}@example.com`
   let ownerCookie: string | null = null
+
+  // Seed the built-in roles (owner/admin/client/member) with their capability
+  // sets, exactly as the server does at boot.
+  await syncSystemRoles(db)
 
   const cms = (path: string, requestOptions: HarnessRequestInit = {}) => {
     const req = buildRequest(path, requestOptions)
@@ -111,50 +136,40 @@ export async function createCapabilityTestHarness(
     return response ?? new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })
   }
 
-  async function sessionForEmail(email: string): Promise<string> {
-    const res = await cms('/admin/api/cms/login', {
-      method: 'POST',
-      json: {
-        email,
-        password: CAPABILITY_TEST_PASSWORD,
-      },
+  async function provisionUser(input: {
+    email: string
+    displayName?: string
+    roleId: string
+  }): Promise<string> {
+    return upsertUserByLogtoSubject(db, {
+      subject: `logto-${input.email}`,
+      email: input.email,
+      displayName: input.displayName ?? input.email,
+      roleId: input.roleId,
     })
-    expect(res.status).toBe(200)
-    const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0]
-    expect(cookie.startsWith(`${SESSION_COOKIE_NAME}=`)).toBe(true)
+  }
+
+  // Step-up removed with the Logto migration — return the cookie unchanged.
+  async function stepUp(cookie: string): Promise<string> {
     return cookie
   }
 
-  async function stepUp(cookie: string): Promise<string> {
-    const res = await cms('/admin/api/cms/auth/step-up', {
-      method: 'POST',
-      cookie,
-      json: { password: CAPABILITY_TEST_PASSWORD },
-    })
-    if (res.status !== 200) {
-      throw new Error(`Step-up failed with ${res.status}: ${await res.text()}`)
-    }
-    const steppedCookie = (res.headers.get('set-cookie') ?? '').split(';')[0]
-    expect(steppedCookie.startsWith(`${SESSION_COOKIE_NAME}=`)).toBe(true)
-    return steppedCookie
+  async function sessionForEmail(email: string): Promise<string> {
+    const { rows } = await db<{ id: string }>`
+      select id from users where email_normalized = ${email.trim().toLowerCase()} and deleted_at is null limit 1
+    `
+    const userId = rows[0]?.id
+    if (!userId) throw new Error(`No user for ${email}`)
+    return mintSession(db, userId)
   }
 
   async function setupOwner(): Promise<string> {
-    const res = await cms('/admin/api/cms/setup', {
-      method: 'POST',
-      json: {
-        siteName: 'Capability Matrix',
-        email: ownerEmail,
-        password: CAPABILITY_TEST_PASSWORD,
-      },
-    })
-    expect(res.status).toBe(201)
-    ownerCookie = await stepUp(await sessionForEmail(ownerEmail))
+    // Bootstrap the default site + starter homepage (same as server boot), so
+    // tests that read `/pages` see the seeded home page.
+    await ensureBootstrapSite(db)
+    const ownerId = await provisionUser({ email: ownerEmail, roleId: 'owner' })
+    ownerCookie = await mintSession(db, ownerId)
     return ownerCookie
-  }
-
-  async function requireOwnerCookie(): Promise<string> {
-    return ownerCookie ?? await setupOwner()
   }
 
   async function createRole(input: {
@@ -162,32 +177,21 @@ export async function createCapabilityTestHarness(
     slug: string
     capabilities: CoreCapability[]
   }): Promise<string> {
-    const res = await cms('/admin/api/cms/roles', {
-      method: 'POST',
-      cookie: await requireOwnerCookie(),
-      json: input,
+    const role = await createCustomRole(db, {
+      name: input.name,
+      slug: input.slug,
+      description: '',
+      capabilities: input.capabilities,
     })
-    expect(res.status).toBe(201)
-    const payload = await readJson<{ role: { id: string } }>(res)
-    return payload.role.id
+    return role.id
   }
 
   async function createUser(input: {
     email: string
     displayName?: string
     roleId: string
-  }): Promise<void> {
-    const res = await cms('/admin/api/cms/users', {
-      method: 'POST',
-      cookie: await requireOwnerCookie(),
-      json: {
-        email: input.email,
-        displayName: input.displayName ?? input.email,
-        password: CAPABILITY_TEST_PASSWORD,
-        roleId: input.roleId,
-      },
-    })
-    expect(res.status).toBe(201)
+  }): Promise<string> {
+    return provisionUser(input)
   }
 
   async function createRoleUser(input: {
@@ -203,14 +207,14 @@ export async function createCapabilityTestHarness(
       slug: input.slug,
       capabilities: input.capabilities,
     })
-    await createUser({
-      email,
-      displayName: input.displayName ?? input.name,
-      roleId,
-    })
+    await createUser({ email, displayName: input.displayName ?? input.name, roleId })
     const cookie = await sessionForEmail(email)
     return { cookie, email, roleId }
   }
+
+  // Keep `ownerCookie` referenced so lint doesn't flag the memo (used by
+  // callers that expect a stable owner session across requests).
+  void ownerCookie
 
   return {
     ...testDb,
@@ -224,5 +228,3 @@ export async function createCapabilityTestHarness(
     createRoleUser,
   }
 }
-
-

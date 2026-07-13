@@ -51,21 +51,12 @@ import {
 // cmsAuth.ts
 // ---------------------------------------------------------------------------
 
-export const CmsSetupStatusSchema = Type.Object({
-  hasSite: Type.Boolean(),
-  hasAdmin: Type.Boolean(),
-  hasOwner: Type.Optional(Type.Boolean()),
-  needsSetup: Type.Boolean(),
-})
-
-export type CmsSetupStatus = Static<typeof CmsSetupStatusSchema>
-
 /**
- * Site identity exposed to unauthenticated callers (the login / setup
- * screen). Returns the configured site name + favicon URL so the brand
- * row can render the operator's logo. Both fields are nullable: a fresh
- * install before `setup` has run resolves to `{ null, null }` and the
- * client falls back to the default mark.
+ * Site identity exposed to unauthenticated callers (the sign-in interstitial
+ * and admin brand row). Returns the configured site name + favicon URL so the
+ * brand row can render the operator's logo. Both fields are nullable: a fresh
+ * install before the site bootstrap resolves to `{ null, null }` and the client
+ * falls back to the default mark.
  */
 export const CmsPublicSiteSchema = Type.Object({
   name: Type.Union([Type.String(), Type.Null()]),

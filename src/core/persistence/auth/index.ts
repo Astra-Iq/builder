@@ -1,12 +1,9 @@
 export {
   getCmsPublicSite,
-  getCmsSetupStatus,
   getCurrentCmsUser,
-  loginCms,
-  setupCms,
-  verifyCmsMfa,
+  probeCmsSession,
 } from '../cmsAuth'
 export type {
   CmsCurrentUser,
 } from '../cmsAuth'
-export type { CmsPublicSite, CmsSetupStatus } from '../responseSchemas'
+export type { CmsPublicSite } from '../responseSchemas'

@@ -1135,4 +1135,18 @@ export const sqliteMigrations: Migration[] = [
       insert into site_sync_state (id, seq) values (1, 0);
     `,
   },
+  {
+    id: '021_users_logto_subject',
+    sql: `
+      alter table users add column logto_subject text;
+
+      create unique index if not exists users_logto_subject_idx
+        on users (logto_subject)
+        where logto_subject is not null;
+
+      -- Identities now come from Logto, where 'owner' is an ordinary role that
+      -- any number of users can hold. Drop the single-active-owner constraint.
+      drop index if exists users_single_active_owner_idx;
+    `,
+  },
 ]

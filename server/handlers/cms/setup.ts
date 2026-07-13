@@ -1,104 +1,28 @@
 /**
- * First-run setup endpoints + public site identity.
+ * Public site identity.
  *
- *   GET  /admin/api/cms/setup/status — does the install need setup?
- *   POST /admin/api/cms/setup        — create site + first owner + a
- *                                       starter homepage in one transaction.
- *   GET  /admin/api/cms/public-site  — site name + favicon URL exposed
- *                                       without auth so the login / setup
- *                                       screen can render the configured
- *                                       brand instead of the default mark.
+ *   GET /admin/api/cms/public-site — site name + favicon URL exposed without
+ *                                    auth so the sign-in interstitial and the
+ *                                    admin brand row can render the configured
+ *                                    mark instead of the default.
  *
- * The setup POST is a one-shot bootstrap: it 409s if anyone has already
- * run setup, so the endpoint can stay public without becoming an account
- * creation backdoor. The `public-site` GET only exposes the two fields
- * that are already rendered on every published page (site name, favicon),
- * so it adds no new information leak.
+ * First-run bootstrap (the default site + starter homepage) now happens at
+ * server boot in `ensureBootstrapSite` — there is no in-app setup wizard, since
+ * Logto owns identity. This endpoint only exposes the two fields already
+ * rendered on every published page (name, favicon), so it adds no info leak.
  */
-import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
-import { hashPassword } from '../../auth/tokens'
-import { createSite, getSetupStatus } from '../../repositories/setup'
-import { createUser } from '../../repositories/users'
-import { createAuditEvent } from '../../repositories/audit'
-import { createDataRow } from '../../repositories/data'
-import { createNode } from '@core/page-tree'
-import { pageToCells } from '../../../src/core/data/pageFromRow'
-import type { Page } from '@core/page-tree'
-import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
+import { jsonResponse, methodNotAllowed } from '../../http'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import type { SiteRow } from '../../types'
-import { CMS_API_PREFIX, requestAuditContext } from './shared'
+import { CMS_API_PREFIX } from './shared'
 
 export async function handleSetupRoutes(req: Request, db: DbClient): Promise<Response | null> {
   const url = new URL(req.url)
 
-  if (url.pathname === `${CMS_API_PREFIX}/setup/status`) {
-    if (req.method !== 'GET') return methodNotAllowed()
-    return jsonResponse(await getSetupStatus(db))
-  }
-
   if (url.pathname === `${CMS_API_PREFIX}/public-site`) {
     if (req.method !== 'GET') return methodNotAllowed()
     return jsonResponse(await loadPublicSiteIdentity(db))
-  }
-
-  if (url.pathname === `${CMS_API_PREFIX}/setup`) {
-    if (req.method !== 'POST') return methodNotAllowed()
-    const status = await getSetupStatus(db)
-    if (!status.needsSetup) {
-      return jsonResponse({ error: 'Setup already complete' }, { status: 409 })
-    }
-
-    const SetupBodySchema = Type.Object({
-      siteName: Type.String(),
-      email: Type.String(),
-      password: Type.String(),
-    })
-    const body = await readValidatedBody(req, SetupBodySchema)
-    if (!body) return badRequest('Invalid request body')
-    const siteName = body.siteName.trim()
-    const email = body.email.trim().toLowerCase()
-    const password = body.password.trim()
-
-    if (!siteName) return badRequest('Missing siteName')
-    if (!email.includes('@')) return badRequest('Invalid email')
-    if (password.length < 12) return badRequest('Password must be at least 12 characters')
-
-    return await db.transaction(async (tx) => {
-      await createSite(tx, siteName, {})
-      const owner = await createUser(tx, {
-        id: nanoid(),
-        email,
-        displayName: email,
-        passwordHash: await hashPassword(password),
-        roleId: 'owner',
-        allowOwnerRole: true,
-      })
-      await createAuditEvent(tx, {
-        actorUserId: null,
-        action: 'user.create',
-        targetType: 'user',
-        targetId: owner.id,
-        metadata: { roleId: 'owner', source: 'setup' },
-        ...requestAuditContext(req),
-      })
-      // Seed a starter homepage as a data_row in the 'pages' system table.
-      const rootNode = createNode('base.body')
-      const homePage: Page = {
-        id: nanoid(),
-        title: 'Home',
-        slug: 'index',
-        nodes: { [rootNode.id]: rootNode },
-        rootNodeId: rootNode.id,
-      }
-      await createDataRow(
-        tx,
-        { id: homePage.id, tableId: 'pages', cells: pageToCells(homePage), slug: homePage.slug },
-        owner.id,
-      )
-      return jsonResponse({ ok: true }, { status: 201 })
-    })
   }
 
   return null

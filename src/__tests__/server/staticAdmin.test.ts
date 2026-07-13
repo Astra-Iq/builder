@@ -51,7 +51,22 @@ function createAdminShellFixture(): string {
 }
 
 describe('self-hosted admin static serving', () => {
-  it('serves the built admin SPA at /admin', async () => {
+  it('serves the built admin SPA at /admin for an authenticated visitor', async () => {
+    const staticDir = createStaticDir()
+    try {
+      const req = new Request('http://localhost/admin')
+      req.headers.set('cookie', `${SESSION_COOKIE_NAME}=test-session`)
+      const res = await handleServerRequest(req, { db: fakeDb, staticDir })
+
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toContain('text/html')
+      expect(await res.text()).toContain('admin app')
+    } finally {
+      rmSync(staticDir, { recursive: true, force: true })
+    }
+  })
+
+  it('redirects an unauthenticated /admin visitor to the Logto sign-in route', async () => {
     const staticDir = createStaticDir()
     try {
       const res = await handleServerRequest(new Request('http://localhost/admin'), {
@@ -59,9 +74,8 @@ describe('self-hosted admin static serving', () => {
         staticDir,
       })
 
-      expect(res.status).toBe(200)
-      expect(res.headers.get('content-type')).toContain('text/html')
-      expect(await res.text()).toContain('admin app')
+      expect(res.status).toBe(302)
+      expect(res.headers.get('location')).toBe('/admin/api/cms/auth/login')
     } finally {
       rmSync(staticDir, { recursive: true, force: true })
     }
@@ -105,18 +119,13 @@ describe('self-hosted admin static serving', () => {
     }
   })
 
-  it('does not preload authenticated workspace chunks on the login shell', async () => {
+  it('redirects an unauthenticated admin request to Logto instead of serving a shell', async () => {
     const staticDir = createAdminShellFixture()
     try {
       const res = await serveAdminApp(staticDir, new Request('http://localhost/admin'))
 
-      expect(res?.status).toBe(200)
-      const html = (await res?.text()) ?? ''
-      expect(html).toContain('data-initial-login-skeleton="true"')
-      expect(html).not.toContain('AuthenticatedAdmin-test.js')
-      expect(html).not.toContain('SitePage-test.js')
-      expect(html).not.toContain('CodeMirrorEditor-test.js')
-      expect(html).not.toContain('rel="prefetch"')
+      expect(res?.status).toBe(302)
+      expect(res?.headers.get('location')).toBe('/admin/api/cms/auth/login')
     } finally {
       rmSync(staticDir, { recursive: true, force: true })
     }

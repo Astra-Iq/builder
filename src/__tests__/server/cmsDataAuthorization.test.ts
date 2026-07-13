@@ -2,8 +2,17 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import type { DbClient } from '../../../server/db'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
-
-const ownedPassword = 'long-enough-password'
+import { ensureBootstrapSite } from '../../../server/bootstrapSite'
+import { syncSystemRoles, createCustomRole as repoCreateCustomRole } from '../../../server/repositories/roles'
+import { upsertUserByLogtoSubject } from '../../../server/repositories/users'
+import { createSession } from '../../../server/auth/sessions'
+import {
+  SESSION_COOKIE_NAME,
+  createSessionToken,
+  hashSessionToken,
+  sessionExpiry,
+} from '../../../server/auth/tokens'
+import type { CoreCapability } from '../../../server/auth/capabilities'
 
 async function body(res: Response): Promise<Record<string, unknown>> {
   return res.json() as Promise<Record<string, unknown>>
@@ -24,55 +33,57 @@ async function request(
   return handleCmsRequest(req, db)
 }
 
-async function setupOwner(db: DbClient): Promise<string> {
-  const setup = await request(db, '/admin/api/cms/setup', {
-    method: 'POST',
-    body: JSON.stringify({
-      siteName: 'Ownership Test',
-      email: 'owner@example.com',
-      password: ownedPassword,
-    }),
+// Auth is provisioned directly (Logto owns login at runtime): mint a session
+// cookie for an upserted identity, exactly as the OIDC callback does.
+async function mintSession(db: DbClient, userId: string): Promise<string> {
+  const token = createSessionToken()
+  await createSession(db, {
+    idHash: await hashSessionToken(token),
+    userId,
+    expiresAt: sessionExpiry(),
+    ipAddress: null,
+    userAgent: null,
   })
-  expect(setup.status).toBe(201)
-  return stepUp(db, await login(db, 'owner@example.com'))
+  return `${SESSION_COOKIE_NAME}=${token}`
+}
+
+async function setupOwner(db: DbClient): Promise<string> {
+  await syncSystemRoles(db)
+  await ensureBootstrapSite(db)
+  const id = await upsertUserByLogtoSubject(db, {
+    subject: 'logto|owner',
+    email: 'owner@example.com',
+    displayName: 'Owner',
+    roleId: 'owner',
+  })
+  return mintSession(db, id)
 }
 
 async function login(db: DbClient, email: string): Promise<string> {
-  const res = await request(db, '/admin/api/cms/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password: ownedPassword }),
-  })
-  expect(res.status).toBe(200)
-  const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0]
-  expect(cookie).toContain('instatic_admin_session=')
-  return cookie
+  const { rows } = await db<{ id: string }>`
+    select id from users where email_normalized = ${email.trim().toLowerCase()} and deleted_at is null limit 1
+  `
+  const id = rows[0]?.id
+  if (!id) throw new Error(`No user for ${email}`)
+  return mintSession(db, id)
 }
 
-async function stepUp(db: DbClient, cookie: string): Promise<string> {
-  const res = await request(db, '/admin/api/cms/auth/step-up', {
-    method: 'POST',
-    cookie,
-    body: JSON.stringify({ password: ownedPassword }),
-  })
-  expect(res.status).toBe(200)
-  const steppedCookie = (res.headers.get('set-cookie') ?? '').split(';')[0]
-  expect(steppedCookie).toContain('instatic_admin_session=')
-  return steppedCookie
+// Step-up removed with the Logto migration — the plain cookie already authorizes.
+async function stepUp(_db: DbClient, cookie: string): Promise<string> {
+  return cookie
 }
 
 async function createUser(
   db: DbClient,
-  ownerCookie: string,
+  _ownerCookie: string,
   input: { email: string; displayName: string; roleId: string },
 ): Promise<string> {
-  const res = await request(db, '/admin/api/cms/users', {
-    method: 'POST',
-    cookie: ownerCookie,
-    body: JSON.stringify({ ...input, password: ownedPassword }),
+  return upsertUserByLogtoSubject(db, {
+    subject: `logto|${input.email}`,
+    email: input.email,
+    displayName: input.displayName,
+    roleId: input.roleId,
   })
-  expect(res.status).toBe(201)
-  const payload = await body(res) as { user: { id: string } }
-  return payload.user.id
 }
 
 /**
@@ -83,22 +94,16 @@ async function createUser(
  */
 async function createCustomRole(
   db: DbClient,
-  ownerCookie: string,
+  _ownerCookie: string,
   input: { slug: string; name: string; capabilities: string[] },
 ): Promise<string> {
-  const res = await request(db, '/admin/api/cms/roles', {
-    method: 'POST',
-    cookie: ownerCookie,
-    body: JSON.stringify({
-      name: input.name,
-      slug: input.slug,
-      description: '',
-      capabilities: input.capabilities,
-    }),
+  const role = await repoCreateCustomRole(db, {
+    name: input.name,
+    slug: input.slug,
+    description: '',
+    capabilities: input.capabilities as CoreCapability[],
   })
-  expect(res.status).toBe(201)
-  const payload = await body(res) as { role: { id: string } }
-  return payload.role.id
+  return role.id
 }
 
 const OWN_EDIT_CAPS = [

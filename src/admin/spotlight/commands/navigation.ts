@@ -20,13 +20,6 @@ const CONTENT_ACCESS_CAPABILITIES = [
   'content.manage',
 ] as const
 
-/** Mirrors `canAccessUsersWorkspace` in access.ts. */
-const USERS_ACCESS_CAPABILITIES = [
-  'users.manage',
-  'roles.manage',
-  'audit.read',
-] as const
-
 /** Mirrors `canAccessDataWorkspace` in access.ts (any `data.*` table read/manage or `content.*`). */
 const DATA_WORKSPACE_CAPABILITIES = [
   'data.custom.tables.read',
@@ -91,20 +84,6 @@ export function getNavigationCommands(): Command[] {
       capability: 'media.read',
       run: (ctx) => {
         ctx.navigate('/admin/media')
-        ctx.closeSpotlight()
-      },
-    },
-    {
-      id: 'navigation.goToUsers',
-      title: 'Go to Users',
-      subtitle: 'Manage users and roles',
-      group: 'navigation',
-      iconName: 'cursor-minimal-solid',
-      keywords: ['users', 'roles', 'team', 'members', 'permissions', 'audit'],
-      workspaces: ['any'],
-      capability: USERS_ACCESS_CAPABILITIES,
-      run: (ctx) => {
-        ctx.navigate('/admin/users')
         ctx.closeSpotlight()
       },
     },

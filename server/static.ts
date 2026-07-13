@@ -202,122 +202,9 @@ function requestHasSessionCookie(req: Request | undefined): boolean {
   return false
 }
 
-// Static skeleton injected into `<div id="root">` for unauthenticated
-// visitors. Minimal CSS — the React form has its own styles which take
-// over on hydration, this only needs to look plausible for ~400 ms.
-//
-// Critical CSS is inlined under `<style data-initial-login>` next to the
-// existing `<style data-initial-loader>` block. Both blocks together are
-// ~3 KB; we keep them above the fold of the initial HTML so paint can
-// happen on the first packet.
-const LOGIN_SKELETON_STYLES = `
-  /* Login skeleton — visible only until React mounts. Mirrors the visual
-     of the React AdminPreAuthForm closely enough that hydration is not
-     jarring. */
-  .login-skeleton {
-    display: grid;
-    min-height: 100vh;
-    place-items: center;
-    overflow: auto;
-    color: #ededed;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Inter, sans-serif;
-  }
-  .login-skeleton__panel {
-    width: 100%;
-    max-width: 360px;
-    padding: 36px 32px 32px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.32);
-    box-sizing: border-box;
-  }
-  .login-skeleton__brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 24px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-    letter-spacing: 0.02em;
-  }
-  .login-skeleton__brand-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #5b8def;
-  }
-  .login-skeleton__title {
-    margin: 0 0 24px;
-    font-size: 22px;
-    font-weight: 600;
-    color: #f5f5f5;
-    line-height: 1.2;
-  }
-  .login-skeleton__field { display: block; margin-bottom: 14px; }
-  .login-skeleton__field > span {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-  }
-  .login-skeleton__input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 9px 12px;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.04);
-    color: #f5f5f5;
-    font-size: 14px;
-    font-family: inherit;
-    outline: none;
-    transition: border-color 0.12s ease, box-shadow 0.12s ease;
-  }
-  .login-skeleton__input:focus {
-    border-color: rgba(91, 141, 239, 0.6);
-    box-shadow: 0 0 0 3px rgba(91, 141, 239, 0.15);
-  }
-  .login-skeleton__submit {
-    width: 100%;
-    padding: 10px 16px;
-    margin-top: 6px;
-    border-radius: 12px;
-    border: 1px solid transparent;
-    background: #f5f5f5;
-    color: #000;
-    font-size: 14px;
-    font-weight: 500;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  .login-skeleton__submit:hover { background: #fff; }
-`
-
-const LOGIN_SKELETON_HTML = `<div class="login-skeleton" data-initial-login-skeleton="true">
-  <div class="login-skeleton__panel">
-    <div class="login-skeleton__brand">
-      <span class="login-skeleton__brand-dot" aria-hidden="true"></span>
-      <span>Admin</span>
-    </div>
-    <h1 class="login-skeleton__title">Sign in</h1>
-    <form class="login-skeleton__form" action="/admin/api/cms/login" method="POST">
-      <label class="login-skeleton__field">
-        <span>Email</span>
-        <input class="login-skeleton__input" type="email" name="email" required autocomplete="email" />
-      </label>
-      <label class="login-skeleton__field">
-        <span>Password</span>
-        <input class="login-skeleton__input" type="password" name="password" required autocomplete="current-password" />
-      </label>
-      <button class="login-skeleton__submit" type="submit">Sign in</button>
-    </form>
-  </div>
-</div>`
-
-// Boot-API kickoff. The three endpoints `useAdminBoot` reads are fired
-// from an inline `<script>` at HTML parse time. This is much faster than
-// the React-driven `useEffect → fetch` path because:
+// Boot-API kickoff. The two endpoints `useAdminBoot` reads (`/me` and
+// `/public-site`) are fired from an inline `<script>` at HTML parse time.
+// This is much faster than the React-driven `useEffect → fetch` path because:
 //
 //   - React 19's concurrent scheduler defers `useEffect` callbacks until
 //     after the first commit + browser paint, AND it yields the main
@@ -345,7 +232,6 @@ const BOOT_API_KICKOFF = `
             });
         };
         window.__instaticBootPromises = {
-          setupStatus: json('/admin/api/cms/setup/status'),
           // /me is allowed to fail (401 when unauthenticated) — swallow
           // here so the await in useAdminBoot doesn't see a rejected
           // promise it can't handle. The server returns an envelope shape
@@ -432,66 +318,31 @@ function injectAuthenticatedHints(html: string, staticDir: string): string {
   )
 }
 
-// Build the admin shell HTML with the login skeleton injected. We avoid
-// repeating the heavy index.html template by patching the served body
-// in-place: replace the inner contents of `<div id="root">` (which the
-// build pipeline always emits with the loader spinner) with our skeleton.
-function injectLoginSkeleton(html: string): string {
-  // 1. Inject the skeleton CSS right after the loader CSS block so the
-  //    critical styles are sent in the first response packet. Also add the
-  //    boot-API kickoff so `useAdminBoot` can consume already-started fetches.
-  const styleTag = `<style data-initial-login>${LOGIN_SKELETON_STYLES}</style>`
-  const injected = `</style>\n    ${styleTag}${BOOT_API_KICKOFF}`
-  let next = html.replace(
-    /<\/style>\s*<\/head>/,
-    (m) => m.replace('</style>', injected),
-  )
-  // Fallback if the marker pattern shifts: append at the end of <head>.
-  if (!next.includes('data-initial-login')) {
-    next = next.replace('</head>', `  ${styleTag}${BOOT_API_KICKOFF}\n  </head>`)
-  }
-
-  // 2. Replace the inner contents of `<div id="root">…</div>` with the
-  //    skeleton. The build emits the loader markup as children of #root,
-  //    followed by `</div></body>`. Match the loader specifically (its
-  //    `data-initial-loader-spinner` attribute is a stable anchor) so the
-  //    regex isn't sensitive to indentation or script placement.
-  const next2 = next.replace(
-    /<div\s+class="loading"[\s\S]*?data-initial-loader-spinner[\s\S]*?<\/div>\s*<\/div>/i,
-    LOGIN_SKELETON_HTML,
-  )
-  if (next2 === next) {
-    // Pattern shifted in a build — fall back to swapping the whole #root
-    // body. Slightly more invasive but always works.
-    return next.replace(
-      /(<div id="root">)([\s\S]*?)(<\/div>\s*<\/body>)/i,
-      `$1${LOGIN_SKELETON_HTML}$3`,
-    )
-  }
-  return next2
-}
 
 export async function serveAdminApp(staticDir: string, req?: Request): Promise<Response | null> {
-  // Authenticated visitors keep the existing spinner shell — they're about
-  // Both authenticated and unauthenticated paths now pass through the
-  // dynamic HTML pipeline so we can inject the `BOOT_API_KICKOFF` inline
+  // Unauthenticated (no session cookie) → redirect straight to the Logto
+  // sign-in route. There is no in-app login form anymore, so serving the SPA
+  // shell to a logged-out visitor would only flash before `useAdminBoot`
+  // bounced them to Logto. Redirecting server-side avoids that flash entirely.
+  // (An EXPIRED cookie still carries the cookie, so it takes the authenticated
+  // path below; `useAdminBoot` catches the /me 401 and redirects client-side.)
+  if (!requestHasSessionCookie(req)) {
+    return new Response(null, {
+      status: 302,
+      headers: { location: '/admin/api/cms/auth/login' },
+    })
+  }
+
+  // Authenticated: serve the SPA shell with the `BOOT_API_KICKOFF` inline
   // script (which fires the boot fetches at HTML-parse time, shaving the
-  // 300+ ms React useEffect deferral). The two paths differ in what they
-  // put inside `<div id="root">`:
-  //
-  //   - Unauthenticated: a styled login form so FCP fires at DCL time.
-  //   - Authenticated:   keep the existing spinner (the user is about to
-  //                      see the authenticated editor, not a login form,
-  //                      so a styled login skeleton would flash badly).
+  // 300+ ms React useEffect deferral) plus the authenticated preload hints.
   const filePath = resolveStaticPath(staticDir, '/index.html')
   if (!filePath) return null
   const file = Bun.file(filePath)
   if (!(await file.exists())) return null
 
   const html = await file.text()
-  const transformed = requestHasSessionCookie(req)
-    ? injectAuthenticatedHints(html, staticDir)
-    : injectLoginSkeleton(html)
+  const transformed = injectAuthenticatedHints(html, staticDir)
   const bytes = new TextEncoder().encode(transformed) as ResponseBytes
   const acceptEncoding = req?.headers.get('accept-encoding') ?? null
   const encoding = selectEncoding(acceptEncoding)

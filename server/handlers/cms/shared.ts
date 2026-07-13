@@ -1,21 +1,12 @@
 /**
  * Shared helpers used by every handler in `server/handlers/cms/*`.
  *
- * - `requestAuditContext` — the `(ipAddress, userAgent)` pair every audit
- *   event carries.
- * - `mutationErrorResponse` — translates the typed mutation errors thrown
- *   by repositories (`UserMutationError`, `RoleMutationError`) into the
- *   `{ error }` JSON envelope clients expect.
- *
- * These helpers are intentionally small and dependency-free so any new
- * handler module can pull them in without dragging the rest of the CMS
- * surface along with it.
+ * `requestAuditContext` — the `(ipAddress, userAgent)` pair every audit event
+ * carries. Kept intentionally small and dependency-free so any new handler
+ * module can pull it in without dragging the rest of the CMS surface along.
  */
 import { Type } from '@core/utils/typeboxHelpers'
-import { jsonResponse } from '../../http'
 import { clientIp } from '../../auth/security'
-import { UserMutationError } from '../../repositories/users'
-import { RoleMutationError } from '../../repositories/roles'
 
 export const CMS_API_PREFIX = '/admin/api/cms'
 
@@ -38,11 +29,4 @@ export function requestAuditContext(req: Request): { ipAddress: string | null; u
     ipAddress: clientIp(req),
     userAgent: req.headers.get('user-agent'),
   }
-}
-
-export function mutationErrorResponse(err: unknown): Response {
-  if (err instanceof UserMutationError || err instanceof RoleMutationError) {
-    return jsonResponse({ error: err.message }, { status: err.status })
-  }
-  throw err
 }

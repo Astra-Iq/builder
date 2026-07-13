@@ -7,7 +7,6 @@ import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
 import { prefetchMediaAssets } from './publish/mediaPrefetch'
-import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
@@ -87,7 +86,6 @@ const routes: readonly RouteHandler[] = [
   tryServeUpload,
   tryServeAdminApp,
   tryServePublicRoute,
-  trySetupRedirect,
   tryServeNotFoundPage,
 ]
 
@@ -443,21 +441,6 @@ async function tryServeAdminApp(
 async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
   return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
-}
-
-/**
- * On a fresh install with no admin user yet, bounce the visitor to /admin so
- * they land in the setup wizard instead of seeing a confusing 404. Returns
- * null when the install is already past setup.
- */
-async function trySetupRedirect(req: Request, runtime: ServerRuntime, _url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  // Sticky memo: once setup completes, this stops querying. Without it every
-  // unmatched GET (bot probes, 404s) paid two COUNT queries forever.
-  const setupStatus = await getSetupStatusCached(runtime.db)
-  return setupStatus.needsSetup
-    ? new Response(null, { status: 302, headers: { location: '/admin' } })
-    : null
 }
 
 /**

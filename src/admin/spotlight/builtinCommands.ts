@@ -32,7 +32,6 @@ import { getDataCommands } from './commands/data'
 import { getFrameworkCommands } from './commands/framework'
 import { getVisualComponentsCommands } from './commands/visualComponents'
 import { getPluginsCommands } from './commands/plugins'
-import { getUsersCommands } from './commands/users'
 import { getPreviewCommands } from './commands/preview'
 import { getAiAssistantCommands } from './commands/aiAssistant'
 import { getImportHtmlCommands } from './commands/importHtml'
@@ -76,7 +75,6 @@ export function getAllCommands(): Command[] {
       ...getDataCommands(),
       ...getFrameworkCommands(),
       ...getVisualComponentsCommands(),
-      ...getUsersCommands(),
       ...getAccountCommands(),
       ...getSettingsCommands(),
       ...getPreviewCommands(),

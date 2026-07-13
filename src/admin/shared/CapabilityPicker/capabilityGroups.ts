@@ -1,19 +1,27 @@
 /**
- * Role-edit capability groupings.
+ * Capability groupings for the `CapabilityPicker`.
  *
- * Every entry in `CAPABILITY_GROUPS` maps to a `<section>` in the role dialog's
- * `CapabilityPicker`. The human-readable label + description for each
- * capability live with the picker (`@admin/shared/CapabilityPicker` →
- * `CAPABILITY_META`).
+ * Every entry in `CAPABILITY_GROUPS` maps to a `<section>` in the picker. The
+ * human-readable label + description for each capability live alongside in
+ * `capabilityMeta.ts` (`CAPABILITY_META`).
  *
- * Adding a new capability: append it to `CORE_CAPABILITIES` (`@core/capabilities`),
- * add it to one of the groups here, and add its meta entry in
- * `CapabilityPicker/capabilityMeta.ts`. The `capability-picker-coverage.test.ts`
- * gate enforces full coverage so a new capability can't quietly disappear from
- * the role-edit UI.
+ * Adding a new capability: append it to `CORE_CAPABILITIES`
+ * (`@core/capabilities`), add it to one of the groups here, and add its meta
+ * entry in `capabilityMeta.ts`. The `capability-picker-coverage.test.ts` gate
+ * enforces full coverage so a new capability can't quietly disappear from the
+ * picker UI.
+ *
+ * The picker is used by the AI/MCP connector dialog (`pages/ai/tabs/McpTab`).
+ * Some groups (Users & Roles, Audit, Dashboard) gate features that are no
+ * longer surfaced in this build; they are kept so the coverage gate stays green
+ * and the capabilities remain assignable to MCP connectors.
  */
 import type { CoreCapability } from '@core/capabilities'
-import type { CapabilityGroup } from '../types'
+
+export interface CapabilityGroup {
+  title: string
+  capabilities: CoreCapability[]
+}
 
 export const CAPABILITY_GROUPS: CapabilityGroup[] = [
   { title: 'Dashboard', capabilities: ['dashboard.read'] },
@@ -71,9 +79,8 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
 ]
 
 /**
- * Flat list of every capability rendered by the role-edit dialog, in the
- * order defined by `CAPABILITY_GROUPS`. Used for the dialog's "select all
- * across every group" master toggle.
+ * Flat list of every capability rendered by the picker, in group order. Used
+ * for the "select all" master toggle and the coverage gate.
  */
 export const ALL_PICKER_CAPABILITIES: readonly CoreCapability[] = CAPABILITY_GROUPS.flatMap(
   (group) => group.capabilities,

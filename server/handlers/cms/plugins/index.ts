@@ -37,7 +37,7 @@
 import type { DbClient } from '../../../db/client'
 import type { CoreCapability } from '../../../auth/capabilities'
 import type { AuthUser } from '../../../repositories/users'
-import { requireCapability, requireStepUp } from '../../../auth/authz'
+import { requireCapability } from '../../../auth/authz'
 import {
   handleServerPluginRuntimeRequest,
   setPluginWorkerDbClient,
@@ -110,75 +110,74 @@ const PLUGIN_ITEM_DISPATCH_PATTERN =
 
 interface PluginRoutePolicy {
   capability: CoreCapability
-  stepUp: boolean
 }
 
 function resolvePluginRoutePolicy(method: string, pathname: string): PluginRoutePolicy {
   // Fresh install / upgrade — uploads + executes arbitrary plugin code. RCE.
   if (method === 'POST' && pathname === '/admin/api/cms/plugins') {
-    return { capability: 'plugins.install', stepUp: true }
+    return { capability: 'plugins.install' }
   }
   if (method === 'POST' && pathname === '/admin/api/cms/plugins/package') {
-    return { capability: 'plugins.install', stepUp: true }
+    return { capability: 'plugins.install' }
   }
   if (method === 'POST' && pathname === '/admin/api/cms/plugins/inspect-package') {
     // Read-only — inspect a .zip before deciding to install. Same audience
     // as the install endpoint (someone deciding whether to run untrusted
     // code), but the operation itself never touches the host.
-    return { capability: 'plugins.install', stepUp: false }
+    return { capability: 'plugins.install' }
   }
   // Pack install — re-syncs a plugin's bundled modules/loops/VCs into the
   // draft site. Runs plugin code in the worker.
   if (method === 'POST' && PLUGIN_PACK_INSTALL_PATTERN.test(pathname)) {
-    return { capability: 'plugins.install', stepUp: true }
+    return { capability: 'plugins.install' }
   }
 
   // PATCH/DELETE on the item endpoint = enable/disable/uninstall.
   if (method === 'DELETE' && PLUGIN_ITEM_PATTERN.test(pathname)) {
     // Uninstall = the install endpoint's inverse; RCE-class risk if
     // forged (deletes plugin assets, runs the uninstall lifecycle hook).
-    return { capability: 'plugins.install', stepUp: true }
+    return { capability: 'plugins.install' }
   }
   if (method === 'PATCH' && PLUGIN_ITEM_PATTERN.test(pathname)) {
     // Enable / disable — runs activate / deactivate hooks; lifecycle.
-    return { capability: 'plugins.lifecycle', stepUp: true }
+    return { capability: 'plugins.lifecycle' }
   }
   if (method === 'POST' && PLUGIN_RESTART_PATTERN.test(pathname)) {
-    return { capability: 'plugins.lifecycle', stepUp: true }
+    return { capability: 'plugins.lifecycle' }
   }
 
   // Schedule mutations — run-now fires arbitrary plugin code immediately;
   // pause/resume change which schedules tick.
   if (method === 'POST' && PLUGIN_SCHEDULE_RUN_NOW_PATTERN.test(pathname)) {
-    return { capability: 'plugins.lifecycle', stepUp: true }
+    return { capability: 'plugins.lifecycle' }
   }
   if (method === 'POST' && PLUGIN_SCHEDULE_PAUSE_PATTERN.test(pathname)) {
-    return { capability: 'plugins.lifecycle', stepUp: true }
+    return { capability: 'plugins.lifecycle' }
   }
   if (method === 'POST' && PLUGIN_SCHEDULE_RESUME_PATTERN.test(pathname)) {
-    return { capability: 'plugins.lifecycle', stepUp: true }
+    return { capability: 'plugins.lifecycle' }
   }
 
   // Per-plugin settings — bounded by the plugin's own schema, but step-up
   // gated because settings changes fire the plugin's `settings.changed`
   // hook with the new values.
   if (method === 'PUT' && PLUGIN_SETTINGS_PATTERN.test(pathname)) {
-    return { capability: 'plugins.configure', stepUp: true }
+    return { capability: 'plugins.configure' }
   }
   if (method === 'GET' && PLUGIN_SETTINGS_PATTERN.test(pathname)) {
-    return { capability: 'plugins.configure', stepUp: false }
+    return { capability: 'plugins.configure' }
   }
 
   // Per-plugin records — bounded by the plugin's own resource schemas.
   // Read = `plugins.read`; write = `plugins.configure` (settings-class).
   if (PLUGIN_RECORD_ITEM_PATTERN.test(pathname) || PLUGIN_RECORDS_PATTERN.test(pathname)) {
-    if (method === 'GET') return { capability: 'plugins.read', stepUp: false }
-    return { capability: 'plugins.configure', stepUp: false }
+    if (method === 'GET') return { capability: 'plugins.read' }
+    return { capability: 'plugins.configure' }
   }
 
   // Read-only routes — collection list, schedules list, events SSE.
   // Anyone with the read cap can inspect plugin state.
-  return { capability: 'plugins.read', stepUp: false }
+  return { capability: 'plugins.read' }
 }
 
 // ---------------------------------------------------------------------------
@@ -257,10 +256,6 @@ export async function handlePluginsRoutes(
   const policy = resolvePluginRoutePolicy(req.method, pathname)
   const user = await requireCapability(req, db, policy.capability)
   if (user instanceof Response) return user
-  if (policy.stepUp) {
-    const stepUp = await requireStepUp(req, db, user)
-    if (stepUp) return stepUp
-  }
 
   return runRouteTable(req, db, PLUGIN_ROUTES, options, user)
 }

@@ -60,7 +60,6 @@ import {
   requireDataTablesRead,
 } from './access'
 import { assertSystemTableUpdateAllowed, lockedBuiltInCellKey } from '@core/data/systemTableGuard'
-import { requireStepUp } from '../../../auth/authz'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -161,11 +160,6 @@ async function handleTablesCollection(req: Request, db: DbClient): Promise<Respo
     : await requireCustomTablesManager(req, db)
   if (user instanceof Response) return user
 
-  if (req.method === 'POST') {
-    const stepUp = await requireStepUp(req, db, user)
-    if (stepUp) return stepUp
-  }
-
   if (req.method === 'GET') {
     const url = new URL(req.url)
     const query = url.searchParams.get('query')?.trim().toLowerCase() ?? ''
@@ -254,8 +248,6 @@ async function handleTableItem(
   const table = await getDataTable(db, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
   if (!canManageTable(user, table)) return forbidden()
-  const stepUp = await requireStepUp(req, db, user)
-  if (stepUp) return stepUp
 
   if (req.method === 'PATCH') {
     const body = await readValidatedBody(req, TablePatchBodySchema)

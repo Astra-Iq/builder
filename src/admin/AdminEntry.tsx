@@ -1,8 +1,7 @@
-import { Suspense, useState } from 'react'
+import { Suspense } from 'react'
 import type { CmsCurrentUser } from '@core/persistence'
 import { AppLoadingScreen } from './AppLoadingScreen'
 import type { AdminWorkspace } from './workspace'
-import { AdminPreAuthForm, type PreAuthPhase } from './preauth/AdminPreAuthForm'
 import { useAdminBoot } from './preauth/useAdminBoot'
 import { prewarmedLazy } from './lib/prewarmedLazy'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
@@ -51,13 +50,6 @@ if (typeof window !== 'undefined' && (window as unknown as { __instaticAuthed?: 
 
 type AdminSection = AdminWorkspace
 
-// After boot, the pre-auth form can lift us into MFA or into the editor.
-// `null` means "follow whatever the boot hook resolved to" — the form has
-// not produced a transition yet.
-type PreAuthOverride =
-  | { phase: PreAuthPhase }
-  | { phase: 'editor'; user: CmsCurrentUser }
-
 interface AdminEntryProps {
   section?: AdminSection
 }
@@ -65,30 +57,17 @@ interface AdminEntryProps {
 export default function AdminEntry({ section = 'site' }: AdminEntryProps) {
   useEditorAppearancePreferences()
   const boot = useAdminBoot()
-  const [override, setOverride] = useState<PreAuthOverride | null>(null)
 
-  if (boot.status === 'loading') return <AppLoadingScreen />
-
-  const livePhase = override?.phase ?? boot.phase
-  const liveUser =
-    override?.phase === 'editor' ? override.user : boot.currentUser
-
-  if (livePhase === 'editor') {
-    if (!liveUser) return <AppLoadingScreen />
+  // Authenticated → render the editor. Loading, or unauthenticated (in which
+  // case `useAdminBoot` is redirecting the browser to Logto), shows the loading
+  // screen — there is no in-app login form.
+  if (boot.status === 'authenticated' && boot.currentUser) {
     return (
       <Suspense fallback={<AppLoadingScreen />}>
-        <AuthenticatedAdmin section={section} currentUser={liveUser} />
+        <AuthenticatedAdmin section={section} currentUser={boot.currentUser} />
       </Suspense>
     )
   }
 
-  return (
-    <AdminPreAuthForm
-      phase={livePhase}
-      publicSite={boot.publicSite}
-      initialError={boot.initialError}
-      onPhaseChange={(phase) => setOverride({ phase })}
-      onAuthenticated={(user) => setOverride({ phase: 'editor', user })}
-    />
-  )
+  return <AppLoadingScreen />
 }

@@ -1,6 +1,7 @@
 import { createDbClient } from './db'
 import { runMigrations } from './db/runMigrations'
 import { syncSystemRoles } from './repositories/roles'
+import { ensureBootstrapSite } from './bootstrapSite'
 import { readServerConfig } from './config'
 import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidrs, stampSocketIp } from './auth/security'
 import { applySecurityHeaders } from './securityHeaders'
@@ -21,6 +22,10 @@ await runMigrations(db, migrations)
 // installations don't strand owners on a stale grant list when new
 // capabilities are added in code. See `syncSystemRoles` for the policy.
 await syncSystemRoles(db)
+// First-run bootstrap: create the default site + starter homepage if this is
+// a fresh install. Idempotent — a no-op once the site row exists. Replaces the
+// old owner-creation setup wizard (identities now come from Logto).
+await ensureBootstrapSite(db)
 // Wire the built-in local-disk media adapter BEFORE plugins activate —
 // plugin adapters register through the same registry but local-disk is
 // always the fallback for unset roles. See `mediaStorageRegistry.ts`.
