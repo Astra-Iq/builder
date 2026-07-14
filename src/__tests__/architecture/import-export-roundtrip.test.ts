@@ -36,10 +36,11 @@ import { strToU8, zipSync } from 'fflate'
 import { listDataTables } from '../../../server/repositories/data/tables'
 import { listDataRows, createDataRow, upsertDataRow, getDataRow } from '../../../server/repositories/data/rows'
 import { saveDraftSite, getDraftSite } from '../../../server/repositories/site'
+import { createSite } from '../../../server/repositories/setup'
 import { createMediaAsset, assignAssetToFolders, getMediaAsset } from '../../../server/repositories/media'
 import { createMediaFolder, listMediaFolders } from '../../../server/repositories/mediaFolders'
 import { importDataRowRedirect, listExportableRedirects } from '../../../server/repositories/data/publish'
-import { createUser } from '../../../server/repositories/users'
+import { seedUser } from '../helpers/seedUser'
 import { createSession } from '../../../server/auth/sessions'
 import {
   createSessionToken,
@@ -75,7 +76,7 @@ beforeAll(async () => {
   await runMigrations(db, sqliteMigrations)
 
   // Add a few rows to the `pages` system table
-  await createDataRow(db, {
+  await createDataRow(db, { siteId: 'default',
     tableId: 'pages',
     cells: {
       title: 'Home',
@@ -86,7 +87,7 @@ beforeAll(async () => {
     slug: 'home',
   })
 
-  await createDataRow(db, {
+  await createDataRow(db, { siteId: 'default',
     tableId: 'pages',
     cells: {
       title: 'Blog Post Template',
@@ -100,7 +101,7 @@ beforeAll(async () => {
   })
 
   // Add a row to the `posts` system table
-  await createDataRow(db, {
+  await createDataRow(db, { siteId: 'default',
     tableId: 'posts',
     cells: { title: 'Hello World', slug: 'hello-world', body: '' },
     slug: 'hello-world',
@@ -108,7 +109,7 @@ beforeAll(async () => {
 
   // --- Capture the "export" snapshot ---
   tables = await listDataTables(db)
-  const rowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, t.id)))
+  const rowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, 'default', t.id)))
   exportedRows = rowsPerTable.flat()
 
   // --- Wipe all data rows ---
@@ -120,7 +121,7 @@ beforeAll(async () => {
 
   // --- Simulate import: re-insert rows preserving ids, status, timestamps ---
   for (const row of exportedRows) {
-    await upsertDataRow(db, {
+    await upsertDataRow(db, { siteId: 'default',
       id: row.id,
       tableId: row.tableId,
       cells: row.cells,
@@ -133,7 +134,7 @@ beforeAll(async () => {
   }
 
   // Refresh from DB after import
-  const reimportedRowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, t.id)))
+  const reimportedRowsPerTable = await Promise.all(tables.map((t) => listDataRows(db, 'default', t.id)))
   const reimportedRows = reimportedRowsPerTable.flat()
 
   // Store for assertions
@@ -211,7 +212,7 @@ describe('import/export round-trip — site shell', () => {
     // A separate fresh DB to confirm the null case without touching the seeded one
     const freshDb = createSqliteClient(':memory:')
     await runMigrations(freshDb, sqliteMigrations)
-    const shell = await getDraftSite(freshDb)
+    const shell = await getDraftSite(freshDb, 'default')
     expect(shell).toBeNull()
   })
 
@@ -249,8 +250,9 @@ describe('import/export round-trip — site shell', () => {
       updatedAt: Date.now(),
     }
 
-    await saveDraftSite(db, mockShell as Parameters<typeof saveDraftSite>[1])
-    const loaded = await getDraftSite(db)
+    await createSite(db, 'Test Site', {})
+    await saveDraftSite(db, 'default', mockShell as Parameters<typeof saveDraftSite>[2])
+    const loaded = await getDraftSite(db, 'default')
     expect(loaded).not.toBeNull()
     expect(loaded!.name).toBe('Test Site')
     expect(loaded!.id).toBe('default')
@@ -284,17 +286,17 @@ const ROUNDTRIP_SHELL: SiteShell = {
  * Seed a site + owner user + session into `db`, return the auth cookie.
  */
 async function seedRoundtripAuth(db: DbClient, email: string): Promise<string> {
-  await saveDraftSite(db, ROUNDTRIP_SHELL)
-  await createUser(db, {
+  await createSite(db, 'Test Site', {})
+  await saveDraftSite(db, 'default', ROUNDTRIP_SHELL)
+  await seedUser(db, {
     id: `owner-${email}`,
     email,
     displayName: 'Test Owner',
-    passwordHash: 'placeholder-hash',
     roleId: 'owner',
-    allowOwnerRole: true,
   })
   const token = createSessionToken()
   await createSession(db, {
+    currentSiteId: 'default',
     idHash: await hashSessionToken(token),
     userId: `owner-${email}`,
     expiresAt: sessionExpiry(),
@@ -339,29 +341,29 @@ describe('with strategies — handler-level roundtrip', () => {
     await runMigrations(sourceDb, sqliteMigrations)
     const sourceCookie = await seedRoundtripAuth(sourceDb, 'source@roundtrip.test')
 
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Post A', slug: 'post-a' },
       slug: 'post-a',
     })
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Post B', slug: 'post-b' },
       slug: 'post-b',
     })
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Post C', slug: 'post-c' },
       slug: 'post-c',
     })
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, { siteId: 'default',
       tableId: 'pages',
       cells: { title: 'Home', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
       slug: 'home',
     })
     // A saved layout — rides the same generic table/row pipeline; the
     // replace strategy must restore it into the seeded system table.
-    await createDataRow(sourceDb, {
+    await createDataRow(sourceDb, { siteId: 'default',
       tableId: 'layouts',
       cells: {
         name: 'Hero',
@@ -420,7 +422,7 @@ describe('with strategies — handler-level roundtrip', () => {
       const tables = await listDataTables(targetDb)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, 'default', t.id)
         allRows.push(...rows)
       }
       const targetIds = new Set(allRows.map((r) => r.id))
@@ -434,7 +436,7 @@ describe('with strategies — handler-level roundtrip', () => {
       const tables = await listDataTables(targetDb)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, 'default', t.id)
         allRows.push(...rows)
       }
       const bundleIds = new Set(sourceBundle.rows.map((r) => r.id))
@@ -481,7 +483,7 @@ describe('with strategies — handler-level roundtrip', () => {
       const tables = await listDataTables(targetDb)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, 'default', t.id)
         allRows.push(...rows)
       }
       const targetIds = new Set(allRows.map((r) => r.id))
@@ -529,7 +531,7 @@ describe('with strategies — handler-level roundtrip', () => {
       const tables = await listDataTables(targetDb)
       const allRows: DataRow[] = []
       for (const t of tables) {
-        const rows = await listDataRows(targetDb, t.id)
+        const rows = await listDataRows(targetDb, 'default', t.id)
         allRows.push(...rows)
       }
       const targetIds = new Set(allRows.map((r) => r.id))
@@ -551,7 +553,7 @@ describe('with strategies — handler-level roundtrip', () => {
       targetCookie = await seedRoundtripAuth(targetDb, 'target-mo-collision@roundtrip.test')
 
       // Pre-seed: add a local-only row + one row that will collide with bundle
-      const localOnly = await createDataRow(targetDb, {
+      const localOnly = await createDataRow(targetDb, { siteId: 'default',
         tableId: 'posts',
         cells: { title: 'Local Only Row', slug: 'local-only' },
         slug: 'local-only',
@@ -559,7 +561,7 @@ describe('with strategies — handler-level roundtrip', () => {
       localOnlyRowId = localOnly.id
 
       // Plant one bundle row already in the target (so it becomes a "replace" hit)
-      await upsertDataRow(targetDb, {
+      await upsertDataRow(targetDb, { siteId: 'default',
         id: sourceBundle.rows[0].id,
         tableId: sourceBundle.rows[0].tableId,
         cells: { title: 'Old Local Version' },
@@ -591,13 +593,13 @@ describe('with strategies — handler-level roundtrip', () => {
     })
 
     test('local-only row is still present (merge-overwrite leaves untouched rows)', async () => {
-      const posts = await listDataRows(targetDb, 'posts')
+      const posts = await listDataRows(targetDb, 'default', 'posts')
       const ids = posts.map((r) => r.id)
       expect(ids).toContain(localOnlyRowId)
     })
 
     test('collided row now has the bundle version of its cells', async () => {
-      const posts = await listDataRows(targetDb, 'posts')
+      const posts = await listDataRows(targetDb, 'default', 'posts')
       const bundleFirst = sourceBundle.rows.find((r) => r.tableId === 'posts')
       expect(bundleFirst).toBeDefined()
       const localRow = posts.find((r) => r.id === bundleFirst!.id)
@@ -634,7 +636,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     await runMigrations(sourceDb, sqliteMigrations)
     const sourceCookie = await seedRoundtripAuth(sourceDb, 'fullsite@roundtrip.test')
 
-    const targetRow = await createDataRow(sourceDb, {
+    const targetRow = await createDataRow(sourceDb, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Renamed Post', slug: 'renamed' },
       slug: 'renamed',
@@ -800,7 +802,7 @@ describe('archive import validation', () => {
       const db = createSqliteClient(':memory:')
       await runMigrations(db, sqliteMigrations)
       const cookie = await seedRoundtripAuth(db, 'atomic-media@roundtrip.test')
-      const existingRow = await createDataRow(db, {
+      const existingRow = await createDataRow(db, { siteId: 'default',
         tableId: 'posts',
         cells: { title: 'Keep me', slug: 'keep-me' },
         slug: 'keep-me',
@@ -855,7 +857,7 @@ describe('archive import validation', () => {
       const db = createSqliteClient(':memory:')
       await runMigrations(db, sqliteMigrations)
       const cookie = await seedRoundtripAuth(db, 'slug-conflict@roundtrip.test')
-      await createDataRow(db, {
+      await createDataRow(db, { siteId: 'default',
         id: 'local-existing-row',
         tableId: 'posts',
         cells: { title: 'Local row', slug: 'shared-slug' },

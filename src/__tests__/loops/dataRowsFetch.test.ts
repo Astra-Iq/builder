@@ -19,7 +19,7 @@
 
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
-import { createUser } from '../../../server/repositories/users'
+import { seedUser } from '../helpers/seedUser'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
 
 type Db = TestDb['db']
@@ -115,20 +115,16 @@ beforeAll(async () => {
   testDb = await createTestDb()
   db = testDb.db
 
-  const author = await createUser(db, {
+  authorId = await seedUser(db, {
     email: 'author@example.com',
     displayName: 'Ada Author',
-    passwordHash: 'h-author',
     roleId: 'admin',
   })
-  const publisher = await createUser(db, {
+  publisherId = await seedUser(db, {
     email: 'publisher@example.com',
     displayName: 'Percy Publisher',
-    passwordHash: 'h-publisher',
     roleId: 'client',
   })
-  authorId = author.id
-  publisherId = publisher.id
 
   // Featured-media asset referenced by the 'alpha' post's cells.
   await db`

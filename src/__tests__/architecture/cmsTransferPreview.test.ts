@@ -22,7 +22,8 @@ import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import { saveDraftSite } from '../../../server/repositories/site'
-import { createUser } from '../../../server/repositories/users'
+import { createSite } from '../../../server/repositories/setup'
+import { seedUser } from '../helpers/seedUser'
 import { createSession } from '../../../server/auth/sessions'
 import {
   createSessionToken,
@@ -63,17 +64,17 @@ const TEST_SHELL: SiteShell = {
 // ---------------------------------------------------------------------------
 
 async function seedAuth(db: DbClient): Promise<string> {
-  await saveDraftSite(db, TEST_SHELL)
-  await createUser(db, {
+  await createSite(db, 'Test Site', {})
+  await saveDraftSite(db, 'default', TEST_SHELL)
+  await seedUser(db, {
     id: 'test-owner',
     email: 'owner@preview.test',
     displayName: 'Test Owner',
-    passwordHash: 'placeholder-hash',
     roleId: 'owner',
-    allowOwnerRole: true,
   })
   const token = createSessionToken()
   await createSession(db, {
+    currentSiteId: 'default',
     idHash: await hashSessionToken(token),
     userId: 'test-owner',
     expiresAt: sessionExpiry(),
@@ -189,11 +190,11 @@ describe('handleImportPreviewRoute — 2 of 5 local rows overlap with bundle', (
     const cookie = await seedAuth(db)
 
     // Seed 5 posts locally — 2 of them will share IDs with the bundle
-    const local1 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'l1' })
-    const local2 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'l2' })
-    const overlap1 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'o1' })
-    const overlap2 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'o2' })
-    const local5 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'l5' })
+    const local1 = await createDataRow(db, { siteId: 'default', tableId: 'posts', cells: {}, slug: 'l1' })
+    const local2 = await createDataRow(db, { siteId: 'default', tableId: 'posts', cells: {}, slug: 'l2' })
+    const overlap1 = await createDataRow(db, { siteId: 'default', tableId: 'posts', cells: {}, slug: 'o1' })
+    const overlap2 = await createDataRow(db, { siteId: 'default', tableId: 'posts', cells: {}, slug: 'o2' })
+    const local5 = await createDataRow(db, { siteId: 'default', tableId: 'posts', cells: {}, slug: 'l5' })
 
     // Bundle contains 4 rows: 2 overlap with local, 2 are new
     const bundle = {
@@ -231,7 +232,7 @@ describe('handleImportPreviewRoute — row slug conflicts', () => {
     await runMigrations(db, sqliteMigrations)
     const cookie = await seedAuth(db)
 
-    await createDataRow(db, { tableId: 'posts', cells: { title: 'Local', slug: 'shared' }, slug: 'shared' })
+    await createDataRow(db, { siteId: 'default', tableId: 'posts', cells: { title: 'Local', slug: 'shared' }, slug: 'shared' })
 
     const bundle = {
       schemaVersion: 1,
