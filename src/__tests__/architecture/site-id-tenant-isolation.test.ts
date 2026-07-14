@@ -68,7 +68,7 @@ function tenantScopedTablesFromMigration(): Set<string> {
 }
 
 /** Tenant-scoped tables whose repository queries this gate enforces. */
-const ISOLATION_ENFORCED = new Set<string>(['data_rows'])
+const ISOLATION_ENFORCED = new Set<string>(['data_rows', 'media_assets', 'media_folders'])
 
 /**
  * Tenant-scoped tables whose isolation is deferred to a later phase. They carry
@@ -83,8 +83,6 @@ const ISOLATION_PENDING = new Set<string>([
   'data_row_redirects',
   'site_snapshots',
   'published_runtime_assets',
-  'media_assets',
-  'media_folders',
   'media_asset_folders',
   'media_smart_folders',
   'media_usage_refs',
@@ -238,6 +236,43 @@ function isAllowlisted(relFile: string, literal: string): boolean {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Media library isolation
+// ---------------------------------------------------------------------------
+//
+// The media_assets / media_folders tables are the editor media library. Unlike
+// data_rows there is no id-vs-enumeration nuance: EVERY library query is scoped,
+// including by-id reads/writes (media ids arrive straight from client requests,
+// so a bare `where id = ?` would let one tenant reach another's asset by id).
+//
+// The isolation boundary is the two library repositories below. Media is also
+// read cross-site in three legitimately-global places OUTSIDE these files, which
+// this gate therefore does not touch: user-avatar hydration (users.ts — users
+// are platform-wide identities), storage maintenance (mediaMigration.ts,
+// mediaStorageAdapters.ts), and publish-by-public_path (data/publish.ts,
+// publish/mediaPrefetch.ts — resolved by globally-unique URL).
+const MEDIA_LIBRARY_RULES: { file: string; anchor: RegExp }[] = [
+  {
+    file: 'server/repositories/media.ts',
+    anchor: /(?:from|join|into|update)\s+media_assets\b|delete\s+from\s+media_assets\b/i,
+  },
+  {
+    file: 'server/repositories/mediaFolders.ts',
+    anchor: /(?:from|join|into|update)\s+media_folders\b|delete\s+from\s+media_folders\b/i,
+  },
+]
+
+/**
+ * A media-library literal is scoped when it references `site_id` inline, OR when
+ * it is the `createMediaAsset` insert whose column list is the
+ * `MEDIA_ASSET_INSERT_COLUMNS` constant — that constant is separately asserted to
+ * contain `site_id`, so the tenant key is supplied even though the token does
+ * not appear inline in the literal.
+ */
+function mediaLiteralScoped(literal: string): boolean {
+  return hasSiteId(literal) || literal.includes('MEDIA_ASSET_INSERT_COLUMNS')
+}
+
 interface Violation {
   file: string
   literal: string
@@ -255,14 +290,18 @@ function scanRepositories(): ScanResult {
   for (const file of walk(REPO_ROOT)) {
     const relFile = relative(PROJECT_ROOT, file)
     const src = readFileSync(file, 'utf8')
+    const mediaRule = MEDIA_LIBRARY_RULES.find((r) => r.file === relFile)
     for (const literal of extractTemplateLiterals(src)) {
-      if (!requiresSiteId(literal)) continue
-      if (hasSiteId(literal)) {
-        compliant++
-        continue
+      // data_rows rule (all repositories)
+      if (requiresSiteId(literal)) {
+        if (hasSiteId(literal)) compliant++
+        else if (!isAllowlisted(relFile, literal)) violations.push({ file: relFile, literal: literal.trim() })
       }
-      if (isAllowlisted(relFile, literal)) continue
-      violations.push({ file: relFile, literal: literal.trim() })
+      // media library rule (the two library repositories only)
+      if (mediaRule && mediaRule.anchor.test(literal)) {
+        if (mediaLiteralScoped(literal)) compliant++
+        else violations.push({ file: relFile, literal: literal.trim() })
+      }
     }
   }
   return { violations, compliant }
@@ -357,5 +396,26 @@ describe('site_id tenant isolation — server/repositories', () => {
       )
     }
     expect(stale).toEqual([])
+  })
+
+  test('MEDIA_ASSET_INSERT_COLUMNS carries site_id (the createMediaAsset insert escape)', () => {
+    // The media-library gate treats the createMediaAsset insert as scoped when it
+    // splices MEDIA_ASSET_INSERT_COLUMNS (the token `site_id` is inside the
+    // constant, not inline in the SQL literal). That escape is only sound while
+    // the constant actually lists site_id — assert it here so the two can't drift.
+    const src = readFileSync(join(PROJECT_ROOT, 'server/repositories/mediaAssetMapping.ts'), 'utf8')
+    const block = src.match(/MEDIA_ASSET_INSERT_COLUMNS\s*=\s*\[([\s\S]*?)\]/)
+    expect(block).not.toBeNull()
+    expect(block![1]).toContain("'site_id'")
+  })
+
+  test('the media library repositories were actually scanned', () => {
+    // Guard against the media file paths rotting into a silent no-op.
+    for (const rule of MEDIA_LIBRARY_RULES) {
+      const abs = join(PROJECT_ROOT, rule.file)
+      expect(existsSync(abs)).toBe(true)
+      const literals = extractTemplateLiterals(readFileSync(abs, 'utf8'))
+      expect(literals.some((l) => rule.anchor.test(l))).toBe(true)
+    }
   })
 })

@@ -341,7 +341,7 @@ const listMediaTool: AiTool = {
   inputSchema: ListMediaInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListMediaInput>
-    const all = await listMediaAssets(ctx.db)
+    const all = await listMediaAssets(ctx.db, DEFAULT_SITE_ID)
     const lowerQuery = args.query?.toLowerCase()
     const lowerMime = args.mimeType?.toLowerCase()
     const filtered = all.filter((asset) => {

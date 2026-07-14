@@ -272,6 +272,7 @@ async function validateUploadedMedia(input: AcceptUploadInput): Promise<Response
  */
 export async function acceptUploadedMedia(
   db: DbClient,
+  siteId: string,
   input: AcceptUploadInput,
 ): Promise<Response | Awaited<ReturnType<typeof createMediaAsset>>> {
   const validated = await validateUploadedMedia(input)
@@ -300,6 +301,7 @@ export async function acceptUploadedMedia(
 
   const asset = await createMediaAsset(db, {
     id: nanoid(),
+    siteId,
     filename: input.file.name || storageName,
     mimeType: validated.detectedMime,
     sizeBytes: input.file.size,
@@ -319,7 +321,7 @@ export async function acceptUploadedMedia(
   if (shouldProcessResponsiveVariants(validated.detectedMime)) {
     const processed = await processImageVariants(db, validated.bytes, dispatched.storagePath)
     if (processed) {
-      const upgraded = await setMediaAssetVariants(db, asset.id, {
+      const upgraded = await setMediaAssetVariants(db, siteId, asset.id, {
         width: processed.width,
         height: processed.height,
         blurHash: processed.blurHash,
@@ -352,17 +354,18 @@ export async function acceptUploadedMedia(
  */
 export async function acceptReplacementMedia(
   db: DbClient,
+  siteId: string,
   assetId: string,
   input: AcceptUploadInput,
 ): Promise<Response | Awaited<ReturnType<typeof replaceMediaAssetBinary>>> {
   const validated = await validateUploadedMedia(input)
   if (validated instanceof Response) return validated
 
-  const previous = await getMediaAsset(db, assetId)
+  const previous = await getMediaAsset(db, siteId, assetId)
   if (!previous) {
     return jsonResponse({ error: 'Media asset not found' }, { status: 404 })
   }
-  const previousStoragePath = await getMediaAssetStoragePath(db, assetId)
+  const previousStoragePath = await getMediaAssetStoragePath(db, siteId, assetId)
   if (!previousStoragePath) {
     return jsonResponse({ error: 'Media asset not found' }, { status: 404 })
   }
@@ -370,7 +373,7 @@ export async function acceptReplacementMedia(
   // can sweep them off the backend after the replace lands. The new
   // variant ladder is derived from the new binary's dimensions, so the
   // old files are guaranteed to be orphaned regardless of width overlap.
-  const previousVariants = await getMediaAssetVariants(db, assetId)
+  const previousVariants = await getMediaAssetVariants(db, siteId, assetId)
 
   const storageName = `${safeStorageStem(input.file.name)}${EXTENSION_FOR_MIME[validated.detectedMime]}`
   const suggestedStoragePath = buildSuggestedStoragePath(safeStorageStem(input.file.name), EXTENSION_FOR_MIME[validated.detectedMime])
@@ -390,7 +393,7 @@ export async function acceptReplacementMedia(
     throw err
   }
 
-  const updated = await replaceMediaAssetBinary(db, assetId, {
+  const updated = await replaceMediaAssetBinary(db, siteId, assetId, {
     filename: input.file.name || storageName,
     mimeType: validated.detectedMime,
     sizeBytes: input.file.size,
@@ -417,7 +420,7 @@ export async function acceptReplacementMedia(
   if (shouldProcessResponsiveVariants(validated.detectedMime)) {
     const processed = await processImageVariants(db, validated.bytes, dispatched.storagePath)
     if (processed) {
-      const upgraded = await setMediaAssetVariants(db, assetId, {
+      const upgraded = await setMediaAssetVariants(db, siteId, assetId, {
         width: processed.width,
         height: processed.height,
         blurHash: processed.blurHash,
@@ -428,7 +431,7 @@ export async function acceptReplacementMedia(
       // Pipeline failed but the row already carries stale width/height/
       // blur from the previous binary — clear them so consumers know there's
       // no responsive ladder for the new binary either.
-      const cleared = await setMediaAssetVariants(db, assetId, {
+      const cleared = await setMediaAssetVariants(db, siteId, assetId, {
         width: null,
         height: null,
         blurHash: null,
@@ -438,7 +441,7 @@ export async function acceptReplacementMedia(
     }
   } else {
     // Non-image replace: drop any leftover image variants/dimensions.
-    const cleared = await setMediaAssetVariants(db, assetId, {
+    const cleared = await setMediaAssetVariants(db, siteId, assetId, {
       width: null,
       height: null,
       blurHash: null,

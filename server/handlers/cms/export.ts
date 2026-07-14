@@ -130,8 +130,8 @@ export async function handleExportRoute(
   // can label and disable categories independent of the current selection.
   if (isSummary) {
     const [media, mediaFolders, redirects] = await Promise.all([
-      countMediaAssetsForExport(db),
-      listExportableMediaFolders(db),
+      countMediaAssetsForExport(db, siteId),
+      listExportableMediaFolders(db, siteId),
       listExportableRedirects(db),
     ])
     return jsonResponse({ media, mediaFolders: mediaFolders.length, redirects: redirects.length })
@@ -202,7 +202,7 @@ export async function handleExportRoute(
   const rows = rowsPerTable.flat()
 
   // Media folder tree — cheap; gather whenever requested.
-  const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db) : undefined
+  const mediaFolders = includeMediaFolders ? await listExportableMediaFolders(db, siteId) : undefined
 
   // Redirects — keep the bundle self-consistent: only include redirects whose
   // table AND target row are part of this export, so the import can restore
@@ -230,7 +230,7 @@ export async function handleExportRoute(
   // Media is embedded only when requested AND an uploads dir is configured —
   // both the estimate and the real export gate on this so they stay in sync.
   const wantMedia = includeMedia && Boolean(options.uploadsDir)
-  const assets = wantMedia ? await listMediaAssetsForExport(db) : []
+  const assets = wantMedia ? await listMediaAssetsForExport(db, siteId) : []
   const archiveAssets = wantMedia && options.uploadsDir
     ? await resolveArchiveAssets(assets, options.uploadsDir)
     : []

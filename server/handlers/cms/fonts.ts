@@ -99,6 +99,8 @@ async function handleEstimateFont(req: Request, db: DbClient): Promise<Response>
 async function handleCustomFont(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'site.style.edit')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const CustomFontBodySchema = Type.Object({
     family: Type.String(),
@@ -126,7 +128,7 @@ async function handleCustomFont(req: Request, db: DbClient): Promise<Response> {
       return badRequest(`Invalid font variant: "${variant}"`)
     }
 
-    const asset = await getMediaAsset(db, mediaAssetId)
+    const asset = await getMediaAsset(db, siteId, mediaAssetId)
     if (!asset) return badRequest(`Media asset not found: ${mediaAssetId}`)
     const format = fontFormatForMime(asset.mimeType)
     if (!format) {

@@ -643,7 +643,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
     })
     redirectTargetRowId = targetRow.id
 
-    const folder = await createMediaFolder(sourceDb, {
+    const folder = await createMediaFolder(sourceDb, { siteId: 'default',
       id: 'folder-logos',
       parentId: null,
       name: 'Logos',
@@ -660,7 +660,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
       join(sourceDir, 'logo.png'),
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
     )
-    const asset = await createMediaAsset(sourceDb, {
+    const asset = await createMediaAsset(sourceDb, { siteId: 'default',
       id: 'asset-logo',
       filename: 'logo.png',
       mimeType: 'image/png',
@@ -672,7 +672,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
       externallyHosted: false,
     })
     assetId = asset.id
-    await assignAssetToFolders(sourceDb, asset.id, { add: [folder.id] })
+    await assignAssetToFolders(sourceDb, 'default', asset.id, { add: [folder.id] })
 
     await importDataRowRedirect(sourceDb, {
       id: 'redirect-1',
@@ -721,7 +721,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
   })
 
   test('media folder tree is restored identically', async () => {
-    const folders = await listMediaFolders(targetDb)
+    const folders = await listMediaFolders(targetDb, 'default')
     expect(folders.length).toBe(1)
     expect(folders[0]?.id).toBe(folderId)
     expect(folders[0]?.name).toBe('Logos')
@@ -729,7 +729,7 @@ describe('full-site round-trip — folders, membership, redirects', () => {
   })
 
   test('asset folder membership is restored', async () => {
-    const asset = await getMediaAsset(targetDb, assetId)
+    const asset = await getMediaAsset(targetDb, 'default', assetId)
     expect(asset).not.toBeNull()
     expect(asset!.folderIds).toContain(folderId)
   })
@@ -1001,8 +1001,8 @@ describe('archive import validation', () => {
       expect(res!.status).toBe(200)
       const body = parseValue(ImportResultSchema, JSON.parse(await res!.text()))
       expect(body.mediaImported).toBe(1)
-      expect(await getMediaAsset(db, 'asset-skipped')).toBeNull()
-      expect(await getMediaAsset(db, 'asset-imported')).not.toBeNull()
+      expect(await getMediaAsset(db, 'default', 'asset-skipped')).toBeNull()
+      expect(await getMediaAsset(db, 'default', 'asset-imported')).not.toBeNull()
     } finally {
       await rm(uploadsDir, { recursive: true, force: true })
     }

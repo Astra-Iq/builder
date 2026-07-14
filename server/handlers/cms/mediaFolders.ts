@@ -47,12 +47,16 @@ const FOLDERS_PATH = `${CMS_API_PREFIX}/media/folders`
 async function handleListFolders(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.read')
   if (user instanceof Response) return user
-  return jsonResponse({ folders: await listMediaFolders(db) })
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
+  return jsonResponse({ folders: await listMediaFolders(db, siteId) })
 }
 
 async function handleCreateFolder(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const CreateFolderBodySchema = Type.Object({
     name: Type.String(),
@@ -65,17 +69,18 @@ async function handleCreateFolder(req: Request, db: DbClient): Promise<Response>
   const parentId = body.parentId ?? null
 
   if (parentId !== null) {
-    const parent = await getMediaFolder(db, parentId)
+    const parent = await getMediaFolder(db, siteId,parentId)
     if (!parent) return badRequest('Parent folder does not exist')
   }
 
   const slug = slugFromTitle(name) || nanoid(8).toLowerCase()
-  if (await isMediaFolderSlugTaken(db, parentId, slug)) {
+  if (await isMediaFolderSlugTaken(db, siteId, parentId, slug)) {
     return badRequest(`A folder with the slug "${slug}" already exists here`)
   }
 
   const folder = await createMediaFolder(db, {
     id: nanoid(),
+    siteId,
     parentId,
     name,
     slug,
@@ -91,6 +96,8 @@ async function handleUpdateFolder(
 ): Promise<Response> {
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const folderId = params.id
 
@@ -103,7 +110,7 @@ async function handleUpdateFolder(
   })
   const body = await readValidatedBody(req, PatchFolderBodySchema)
   if (!body) return badRequest('Invalid request body')
-  const existing = await getMediaFolder(db, folderId)
+  const existing = await getMediaFolder(db, siteId,folderId)
   if (!existing) return jsonResponse({ error: 'Folder not found' }, { status: 404 })
 
   const patch: UpdateMediaFolderInput = {}
@@ -116,7 +123,7 @@ async function handleUpdateFolder(
     // The slug derives from the name — the user can't set it directly.
     // Re-check uniqueness against the new (parent, slug) pair.
     const effectiveParent = body.parentId !== undefined ? body.parentId : existing.parentId
-    if (await isMediaFolderSlugTaken(db, effectiveParent, slug, folderId)) {
+    if (await isMediaFolderSlugTaken(db, siteId, effectiveParent, slug, folderId)) {
       return badRequest(`A folder with the slug "${slug}" already exists here`)
     }
     patch.slug = slug
@@ -135,10 +142,10 @@ async function handleUpdateFolder(
         if (cursor === folderId) {
           return badRequest('A folder cannot be moved into its own descendant')
         }
-        const ancestor = await getMediaFolder(db, cursor)
+        const ancestor = await getMediaFolder(db, siteId,cursor)
         cursor = ancestor?.parentId ?? null
       }
-      const parent = await getMediaFolder(db, parentRaw)
+      const parent = await getMediaFolder(db, siteId,parentRaw)
       if (!parent) return badRequest('Target parent folder does not exist')
     }
     patch.parentId = parentRaw
@@ -150,7 +157,7 @@ async function handleUpdateFolder(
     return badRequest('No editable fields supplied')
   }
 
-  const folder = await updateMediaFolder(db, folderId, patch)
+  const folder = await updateMediaFolder(db, siteId, folderId, patch)
   if (!folder) return jsonResponse({ error: 'Folder not found' }, { status: 404 })
   return jsonResponse({ folder })
 }
@@ -162,8 +169,10 @@ async function handleDeleteFolder(
 ): Promise<Response> {
   const user = await requireCapability(req, db, 'media.delete')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
-  const ok = await deleteMediaFolder(db, params.id)
+  const ok = await deleteMediaFolder(db, siteId, params.id)
   if (!ok) return jsonResponse({ error: 'Folder not found' }, { status: 404 })
   return jsonResponse({ ok: true })
 }

@@ -30,7 +30,7 @@ function spyUnsafe(db: DbClient): { spy: DbClient; unsafeSqls: string[] } {
 }
 
 async function seedAsset(db: DbClient, id: string): Promise<void> {
-  await createMediaAsset(db, {
+  await createMediaAsset(db, { siteId: 'default',
     id,
     filename: `${id}.png`,
     mimeType: 'image/png',
@@ -61,12 +61,12 @@ describe('loadFolderIdsForAssets — single grouped read (N+1 fix)', () => {
     await seedFolder(db, 'f1')
     await seedFolder(db, 'f2')
 
-    await assignAssetToFolders(db, 'a1', { add: ['f1', 'f2'] })
-    await assignAssetToFolders(db, 'a2', { add: ['f1'] })
+    await assignAssetToFolders(db, 'default', 'a1', { add: ['f1', 'f2'] })
+    await assignAssetToFolders(db, 'default', 'a2', { add: ['f1'] })
     // a3 intentionally has no folder memberships.
 
     const { spy, unsafeSqls } = spyUnsafe(db)
-    const assets = await listMediaAssets(spy)
+    const assets = await listMediaAssets(spy, 'default')
 
     // One — and only one — query touches media_asset_folders for the whole batch.
     const folderQueries = unsafeSqls.filter((sql) => sql.includes('media_asset_folders'))

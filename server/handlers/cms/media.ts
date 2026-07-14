@@ -119,13 +119,15 @@ function buildMetadataPatch(body: { filename?: string; altText?: string; caption
 async function handleListMedia(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.read')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const url = new URL(req.url)
   const trash = readQueryFlag(url, 'trash')
   const query = url.searchParams.get('query')?.trim().toLowerCase() ?? ''
   const limit = readLimit(url)
 
-  let assets = await listMediaAssets(db, { includeDeleted: trash })
+  let assets = await listMediaAssets(db, siteId, { includeDeleted: trash })
 
   // JS-side text filter (follows the intentional design of this repo — see
   // listMediaAssets comment about JS-side filtering for small media libraries).
@@ -149,11 +151,13 @@ async function handleListMedia(req: Request, db: DbClient): Promise<Response> {
 async function handleUploadMedia(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const file = await readUploadedFile(req)
   if (!file) return badRequest('Missing file')
 
-  const result = await acceptUploadedMedia(db, {
+  const result = await acceptUploadedMedia(db, siteId, {
     file,
     maxBytes: MAX_MEDIA_BYTES,
     allowedMimes: MEDIA_LIBRARY_MIMES,
@@ -173,8 +177,10 @@ async function handleRestoreMedia(
 ): Promise<Response> {
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
-  const restored = await restoreMediaAsset(db, params.id)
+  const restored = await restoreMediaAsset(db, siteId, params.id)
   if (!restored) return notFound()
   return jsonResponse({ asset: restored })
 }
@@ -189,11 +195,13 @@ async function handleReplaceMedia(
   // this asset (variants regenerate too).
   const user = await requireCapability(req, db, 'media.replace')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const file = await readUploadedFile(req)
   if (!file) return badRequest('Missing file')
 
-  const result = await acceptReplacementMedia(db, params.id, {
+  const result = await acceptReplacementMedia(db, siteId, params.id, {
     file,
     maxBytes: MAX_MEDIA_BYTES,
     allowedMimes: MEDIA_LIBRARY_MIMES,
@@ -213,6 +221,8 @@ async function handleAssignMediaFolders(
 ): Promise<Response> {
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const AssignFoldersBodySchema = Type.Object({
     add: Type.Optional(Type.Array(Type.String())),
@@ -225,7 +235,7 @@ async function handleAssignMediaFolders(
   if (add.length === 0 && remove.length === 0) {
     return badRequest('Provide `add` or `remove` folder ids')
   }
-  const asset = await assignAssetToFolders(db, params.id, { add, remove })
+  const asset = await assignAssetToFolders(db, siteId, params.id, { add, remove })
   if (!asset) return notFound()
   return jsonResponse({ asset })
 }
@@ -237,6 +247,8 @@ async function handleUpdateMediaMetadata(
 ): Promise<Response> {
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const body = await readValidatedBody(req, UpdateMediaMetadataBodySchema)
   if (!body) return badRequest('Invalid request body')
@@ -244,7 +256,7 @@ async function handleUpdateMediaMetadata(
   if (patch instanceof Response) return patch
   if (Object.keys(patch).length === 0) return badRequest('No editable fields supplied')
 
-  const asset = await updateMediaAssetMetadata(db, params.id, patch)
+  const asset = await updateMediaAssetMetadata(db, siteId, params.id, patch)
   if (!asset) return notFound()
   return jsonResponse({ asset })
 }
@@ -256,12 +268,14 @@ async function handleDeleteMedia(
 ): Promise<Response> {
   const user = await requireCapability(req, db, 'media.delete')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const url = new URL(req.url)
   const purge = readQueryFlag(url, 'purge')
 
   if (!purge) {
-    const asset = await softDeleteMediaAsset(db, params.id)
+    const asset = await softDeleteMediaAsset(db, siteId, params.id)
     if (!asset) return notFound()
     return jsonResponse({ asset })
   }
@@ -269,7 +283,7 @@ async function handleDeleteMedia(
   // Hard delete — only legal on already-trashed assets so a single
   // click can't bypass the trash safety net. Caller must explicitly
   // soft-delete first and then purge from the Trash view.
-  const existing = await getMediaAsset(db, params.id)
+  const existing = await getMediaAsset(db, siteId, params.id)
   if (!existing) return notFound()
   if (!existing.deletedAt) return badRequest('Asset must be soft-deleted before purge')
 
@@ -277,7 +291,7 @@ async function handleDeleteMedia(
   // extra bytes to sweep from each variant's adapter alongside the original.
   const variants = existing.variants
   const adapterId = existing.storageAdapterId
-  const deleted = await deleteMediaAsset(db, params.id)
+  const deleted = await deleteMediaAsset(db, siteId, params.id)
   if (!deleted) return notFound()
 
   await dispatchDelete(adapterId, deleted.storagePath).catch((err) => {

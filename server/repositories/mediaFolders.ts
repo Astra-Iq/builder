@@ -7,6 +7,9 @@
  *
  * Asset membership is many-to-many through `media_asset_folders` — see
  * `repositories/media.ts → assignAssetToFolders` for that join.
+ *
+ * Folders are per-site content: every query is scoped by the caller's resolved
+ * `siteId` (gated by `site-id-tenant-isolation.test.ts`).
  */
 import type { DbClient } from '../db/client'
 import { isoDate } from '@core/utils/isoDate'
@@ -23,6 +26,8 @@ interface MediaFolder {
 
 interface CreateMediaFolderInput {
   id: string
+  /** The tenant that owns this folder. */
+  siteId: string
   parentId: string | null
   name: string
   slug: string
@@ -59,10 +64,11 @@ function mapFolder(row: MediaFolderRow): MediaFolder {
   }
 }
 
-export async function listMediaFolders(db: DbClient): Promise<MediaFolder[]> {
+export async function listMediaFolders(db: DbClient, siteId: string): Promise<MediaFolder[]> {
   const { rows } = await db<MediaFolderRow>`
     select id, parent_id, name, slug, sort_order, created_by_user_id, created_at
     from media_folders
+    where site_id = ${siteId}
     order by sort_order asc, lower(name) asc
   `
   return rows.map(mapFolder)
@@ -70,12 +76,13 @@ export async function listMediaFolders(db: DbClient): Promise<MediaFolder[]> {
 
 export async function getMediaFolder(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<MediaFolder | null> {
   const { rows } = await db<MediaFolderRow>`
     select id, parent_id, name, slug, sort_order, created_by_user_id, created_at
     from media_folders
-    where id = ${id}
+    where id = ${id} and site_id = ${siteId}
   `
   return rows[0] ? mapFolder(rows[0]) : null
 }
@@ -86,9 +93,10 @@ export async function createMediaFolder(
 ): Promise<MediaFolder> {
   const sortOrder = input.sortOrder ?? 0
   const { rows } = await db<MediaFolderRow>`
-    insert into media_folders (id, parent_id, name, slug, sort_order, created_by_user_id)
+    insert into media_folders (id, site_id, parent_id, name, slug, sort_order, created_by_user_id)
     values (
       ${input.id},
+      ${input.siteId},
       ${input.parentId},
       ${input.name},
       ${input.slug},
@@ -102,6 +110,7 @@ export async function createMediaFolder(
 
 export async function updateMediaFolder(
   db: DbClient,
+  siteId: string,
   id: string,
   input: UpdateMediaFolderInput,
 ): Promise<MediaFolder | null> {
@@ -122,7 +131,7 @@ export async function updateMediaFolder(
         slug = coalesce(${slug}, slug),
         parent_id = ${input.parentId},
         sort_order = coalesce(${sortOrder}, sort_order)
-      where id = ${id}
+      where id = ${id} and site_id = ${siteId}
       returning id, parent_id, name, slug, sort_order, created_by_user_id, created_at
     `
     if (rows.length === 0) return null
@@ -134,7 +143,7 @@ export async function updateMediaFolder(
       name = coalesce(${name}, name),
       slug = coalesce(${slug}, slug),
       sort_order = coalesce(${sortOrder}, sort_order)
-    where id = ${id}
+    where id = ${id} and site_id = ${siteId}
     returning id, parent_id, name, slug, sort_order, created_by_user_id, created_at
   `
   if (rows.length === 0) return null
@@ -148,10 +157,11 @@ export async function updateMediaFolder(
  */
 export async function deleteMediaFolder(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<boolean> {
   const result = await db`
-    delete from media_folders where id = ${id}
+    delete from media_folders where id = ${id} and site_id = ${siteId}
   `
   return result.rowCount > 0
 }
@@ -170,8 +180,11 @@ export interface ExportableMediaFolder {
 }
 
 /** The whole folder tree, raw, for a full-site export. */
-export async function listExportableMediaFolders(db: DbClient): Promise<ExportableMediaFolder[]> {
-  const folders = await listMediaFolders(db)
+export async function listExportableMediaFolders(
+  db: DbClient,
+  siteId: string,
+): Promise<ExportableMediaFolder[]> {
+  const folders = await listMediaFolders(db, siteId)
   return folders.map((f) => ({
     id: f.id,
     parentId: f.parentId,
@@ -181,25 +194,28 @@ export async function listExportableMediaFolders(db: DbClient): Promise<Exportab
   }))
 }
 
-/** Wipe all folders (cascades membership) — used by the `replace` import strategy. */
-export async function deleteAllMediaFolders(db: DbClient): Promise<void> {
-  await db`delete from media_folders`
+/** Wipe a site's folders (cascades membership) — used by the `replace` import strategy. */
+export async function deleteAllMediaFolders(db: DbClient, siteId: string): Promise<void> {
+  await db`delete from media_folders where site_id = ${siteId}`
 }
 
 /**
  * Insert a folder preserving its original id, upserting on conflict so a
  * re-import is idempotent. `created_by_user_id` is left null — folder
- * authorship is instance-local and is not carried in the bundle. Used by the
- * bundle import handler.
+ * authorship is instance-local and is not carried in the bundle. `siteId` is
+ * supplied by the import handler (the tenant being imported into), not by the
+ * serialized bundle. Used by the bundle import handler.
  */
 export async function importMediaFolder(
   db: DbClient,
+  siteId: string,
   input: ExportableMediaFolder,
 ): Promise<void> {
   await db`
-    insert into media_folders (id, parent_id, name, slug, sort_order, created_by_user_id)
+    insert into media_folders (id, site_id, parent_id, name, slug, sort_order, created_by_user_id)
     values (
       ${input.id},
+      ${siteId},
       ${input.parentId},
       ${input.name},
       ${input.slug},
@@ -215,12 +231,13 @@ export async function importMediaFolder(
 }
 
 /**
- * Detect whether a (parent, slug) pair is already taken — used by the create
- * / rename handlers to return a friendly error rather than a raw unique
- * constraint violation.
+ * Detect whether a (parent, slug) pair is already taken within a site — used by
+ * the create / rename handlers to return a friendly error rather than a raw
+ * unique constraint violation.
  */
 export async function isMediaFolderSlugTaken(
   db: DbClient,
+  siteId: string,
   parentId: string | null,
   slug: string,
   excludeId?: string,
@@ -229,14 +246,14 @@ export async function isMediaFolderSlugTaken(
     if (parentId === null) {
       const { rows } = await db<{ id: string }>`
         select id from media_folders
-        where parent_id is null and slug = ${slug} and id <> ${excludeId}
+        where site_id = ${siteId} and parent_id is null and slug = ${slug} and id <> ${excludeId}
         limit 1
       `
       return rows.length > 0
     }
     const { rows } = await db<{ id: string }>`
       select id from media_folders
-      where parent_id = ${parentId} and slug = ${slug} and id <> ${excludeId}
+      where site_id = ${siteId} and parent_id = ${parentId} and slug = ${slug} and id <> ${excludeId}
       limit 1
     `
     return rows.length > 0
@@ -244,14 +261,14 @@ export async function isMediaFolderSlugTaken(
   if (parentId === null) {
     const { rows } = await db<{ id: string }>`
       select id from media_folders
-      where parent_id is null and slug = ${slug}
+      where site_id = ${siteId} and parent_id is null and slug = ${slug}
       limit 1
     `
     return rows.length > 0
   }
   const { rows } = await db<{ id: string }>`
     select id from media_folders
-    where parent_id = ${parentId} and slug = ${slug}
+    where site_id = ${siteId} and parent_id = ${parentId} and slug = ${slug}
     limit 1
   `
   return rows.length > 0

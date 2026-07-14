@@ -241,9 +241,9 @@ export async function handleImportRoute(
       //    media_folders (unrelated FK), so wipe explicitly, then insert
       //    parent-first to satisfy the self-referencing parent_id FK.
       if (bundle.mediaFolders) {
-        await deleteAllMediaFolders(tx)
+        await deleteAllMediaFolders(tx, siteId)
         for (const folder of orderFoldersParentFirst(bundle.mediaFolders)) {
-          await importMediaFolder(tx, folder)
+          await importMediaFolder(tx, siteId, folder)
           importedFolderIds.add(folder.id)
           mediaFoldersImported++
         }
@@ -395,6 +395,7 @@ export async function handleImportRoute(
 
         // Upsert the media_assets row
         await importMediaAsset(db, {
+          siteId,
           id: asset.id,
           filename: asset.filename,
           mimeType: asset.mimeType,
@@ -417,7 +418,7 @@ export async function handleImportRoute(
         // imported, so a stale folderId can't violate the membership FK.
         const targetFolders = asset.folderIds.filter((id) => importedFolderIds.has(id))
         if (targetFolders.length > 0) {
-          await assignAssetToFolders(db, asset.id, { add: targetFolders })
+          await assignAssetToFolders(db, siteId, asset.id, { add: targetFolders })
         }
 
         mediaImported++

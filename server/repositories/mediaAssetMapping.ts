@@ -42,6 +42,7 @@ export const MEDIA_ASSET_COLUMNS = `id, filename, mime_type, size_bytes, public_
  */
 export const MEDIA_ASSET_INSERT_COLUMNS = [
   'id',
+  'site_id',
   'filename',
   'mime_type',
   'size_bytes',

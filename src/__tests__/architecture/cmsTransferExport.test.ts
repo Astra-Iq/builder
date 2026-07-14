@@ -347,7 +347,7 @@ describe('handleExportRoute — GET ?includeMedia=1', () => {
     const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-export-media-'))
     try {
       await writeFile(join(uploadsDir, 'logo.png'), Buffer.from('fake-png-bytes'))
-      await createMediaAsset(mediaDb, {
+      await createMediaAsset(mediaDb, { siteId: 'default',
         id: 'asset-logo',
         filename: 'logo.png',
         mimeType: 'image/png',
@@ -519,7 +519,7 @@ describe('handleExportRoute — POST /export/estimate with embedded media', () =
       // Base64 payload that isn't a clean multiple of 3 (exercises padding).
       const fileBytes = Buffer.alloc(5000, 7)
       await writeFile(join(uploadsDir, 'seed.bin'), fileBytes)
-      await createMediaAsset(mediaDb, {
+      await createMediaAsset(mediaDb, { siteId: 'default',
         id: 'asset-1',
         filename: 'seed.bin',
         mimeType: 'application/octet-stream',
