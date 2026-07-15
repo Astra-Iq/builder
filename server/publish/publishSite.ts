@@ -49,6 +49,7 @@ import {
 } from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
+import { pushPublishedSite } from './publishPush'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 
 interface PublishResult {
@@ -303,6 +304,19 @@ async function publishDraftSiteLocked(
   // window where the freshly-swapped shells (stamped nextPublishVersion) are
   // live while the version counter still reads the old value.
   bumpPublishVersion()
+
+  // Publish push: ship the just-swapped generation to the elected object-storage
+  // adapter, keyed per site. Runs AFTER the local swap so the site is already
+  // live locally; the push is derived, best-effort state (a failure is logged,
+  // never fatal — the local slot stays authoritative). The built-in local-disk
+  // adapter no-ops, so the default single-host install pays only one lookup.
+  if (uploadsDir) {
+    try {
+      await pushPublishedSite(uploadsDir, siteId)
+    } catch (err) {
+      console.error('[publish:site] object-storage push failed (local slot remains live):', err)
+    }
+  }
 
   return { publishedPages }
 }

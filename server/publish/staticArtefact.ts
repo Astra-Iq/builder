@@ -33,9 +33,11 @@
  * `assertPathWithin` in `server/util/pathWithin.ts`.
  */
 
+import type { Dirent } from 'node:fs'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import {
   mkdir,
+  readdir,
   readFile,
   readlink,
   rename,
@@ -581,4 +583,53 @@ export async function readStaticAsset(
   }
 
   return null
+}
+
+/**
+ * Enumerate every file in a site's currently-active slot as slot-relative
+ * POSIX paths + bytes, read through the `current` symlink.
+ *
+ * This is the source of truth for "what a publish just baked" — HTML, CSS,
+ * runtime JS, data-row artefacts, and the 404 page all land in the slot — so
+ * the publish push (`publishPush.ts`) ships exactly the served generation.
+ * Returns `[]` when nothing is published (no `current` symlink) or the siteId
+ * is unsafe. Never throws.
+ */
+export async function readActiveSlotArtefacts(
+  uploadsDir: string,
+  siteId: string,
+): Promise<Array<{ relPath: string; bytes: Uint8Array }>> {
+  let root: string
+  try {
+    root = join(getPublishedDir(uploadsDir, siteId), 'current')
+  } catch {
+    return []
+  }
+
+  const out: Array<{ relPath: string; bytes: Uint8Array }> = []
+  const walk = async (dir: string, prefix: string): Promise<void> => {
+    let entries: Dirent<string>[]
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      // Missing slot / not-yet-published: treat as empty, never throw.
+      return
+    }
+    for (const entry of entries) {
+      const abs = join(dir, entry.name)
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        await walk(abs, rel)
+      } else if (entry.isFile()) {
+        try {
+          const buffer = await readFile(abs)
+          out.push({ relPath: rel, bytes: new Uint8Array(buffer) })
+        } catch {
+          // Skip a file that vanished mid-walk (e.g. a concurrent republish).
+        }
+      }
+    }
+  }
+  await walk(root, '')
+  return out
 }

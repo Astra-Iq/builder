@@ -11,6 +11,7 @@ await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
+const { publishStorageRegistry } = await import('./publish/publishStorageRegistry')
 
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
@@ -30,6 +31,10 @@ await ensureBootstrapSite(db)
 // plugin adapters register through the same registry but local-disk is
 // always the fallback for unset roles. See `mediaStorageRegistry.ts`.
 mediaStorageRegistry.configureLocalDisk({ uploadsDir: config.uploadsDir })
+// Wire the built-in local-disk publish adapter (no-op push — baked artefacts
+// already live on local disk). Plugins register remote object-storage adapters
+// (S3/R2) through the same registry. See `publishStorageRegistry.ts`.
+publishStorageRegistry.configureLocalDisk()
 await activateInstalledServerPlugins(db, config.uploadsDir)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.

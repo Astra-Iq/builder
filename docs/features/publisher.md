@@ -317,6 +317,32 @@ The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/ass
 publish whose disk write failed. Unknown paths under either prefix 404 rather
 than falling through.
 
+### Publish push — shipping the baked generation to object storage
+
+For a per-merchant CDN deployment the baked bytes also need to reach an object
+store. After the local slot swap and `bumpPublishVersion()`, `publishDraftSite`
+calls `pushPublishedSite(uploadsDir, siteId)` (`server/publish/publishPush.ts`),
+which reads the just-swapped active slot (`readActiveSlotArtefacts`) and pushes
+every file to the **elected publish storage adapter** under a per-site key,
+`sites/<siteId>/<relPath>`.
+
+Adapters live in `publishStorageRegistry` — the sibling of the media storage
+registry. The built-in local-disk adapter (reserved id `''`) is a **no-op push**
+(the bytes already live on local disk), so the default single-host install pays
+only one registry lookup. Plugins register remote adapters (S3, Cloudflare R2,
+GCS) implementing the `PublishStorageAdapter` contract (`putObject` /
+`deleteObject` by key); `resolveActive` returns the first-registered remote,
+else local disk. The push is **derived, best-effort** state: it runs after the
+site is already live locally, and a failure is logged, never fatal — the local
+slot stays authoritative and the next publish re-ships the whole generation.
+
+**Deferred (not yet wired):** an admin "active publish backend" election
+(mirroring media's persisted `active_media_storage_adapter`); the QuickJS bridge
+that lets a third-party plugin register a publish adapter; a request → site
+resolver for genuinely multi-tenant *serving* (`resolveSiteForRequest` currently
+returns the default site); and a **CDN cache purge** after a successful push
+(the `pushPublishedSite` TODO — fire a purge for the merchant's domain).
+
 ---
 
 ## `<head>` assembly
@@ -363,7 +389,10 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
-| `server/publish/staticArtefact.ts`              | Two-slot symlink swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/staticArtefact.ts`              | Per-site two-slot symlink swap (`swapSlot`) under `published/<siteId>/`, per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), reads (`readArtefact`), and the whole-slot enumerator (`readActiveSlotArtefacts`). Layer A. |
+| `server/publish/requestSite.ts`                 | `resolveSiteForRequest(db, host)` — maps a visitor request to its `site_id` before reading the per-site slot. Returns the default site today; the seam a Host/custom-domain lookup slots into. |
+| `server/publish/publishStorageRegistry.ts`      | Publish storage adapter registry (sibling of `mediaStorageRegistry`). Built-in local-disk no-op (`''`); plugins register S3/R2 remotes. `resolveActive` picks the elected push target. |
+| `server/publish/publishPush.ts`                 | `pushPublishedSite(uploadsDir, siteId)` — ships the just-swapped slot to the elected adapter, keyed `sites/<siteId>/<relPath>`. Best-effort, runs after the local swap. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
 | `server/publish/holeRuntime.ts`                 | Exports `runInstaticHoleRuntime` (the TypeScript source of the Layer C runtime) and `HOLE_RUNTIME_JS` (IIFE-serialized string, ~1.1 KB, served to browsers). Tests call `runInstaticHoleRuntime()` directly to avoid dynamic eval. |

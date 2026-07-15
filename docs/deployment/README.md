@@ -89,7 +89,7 @@ SQLite is the default for single-site installs. Postgres is for multiple simulta
 - uploaded media originals and variants
 - uploaded fonts
 - plugin packages and module packs
-- published static artefacts under `published/current`
+- published static artefacts under `published/<siteId>/current` (one isolated two-slot tree per site)
 
 SQLite installs also need the SQLite database file on persistent storage. On platforms with only one app volume, put both the SQLite file and uploads under the same mounted root.
 
