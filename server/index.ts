@@ -37,6 +37,12 @@ mediaStorageRegistry.configureLocalDisk({ uploadsDir: config.uploadsDir })
 // already live on local disk). Plugins register remote object-storage adapters
 // (S3/R2) through the same registry. See `publishStorageRegistry.ts`.
 publishStorageRegistry.configureLocalDisk()
+// Election by env presence: when PUBLISH_STORAGE_* is set, register the
+// first-party S3/R2 adapter so every publish pushes baked output to the bucket.
+if (config.publishStorage) {
+  const { createS3PublishAdapter } = await import('./publish/s3PublishStorage')
+  publishStorageRegistry.register(createS3PublishAdapter(config.publishStorage))
+}
 await activateInstalledServerPlugins(db, config.uploadsDir)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.

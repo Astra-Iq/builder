@@ -99,6 +99,8 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      publicBaseDomain: null,
+      publishStorage: null,
     })
   })
 
@@ -121,6 +123,33 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      publicBaseDomain: null,
+      publishStorage: null,
     })
+  })
+
+  it('reads the public base domain and S3/R2 publish storage from env', () => {
+    const config = readServerConfig({
+      PUBLIC_BASE_DOMAIN: 'ShopZoon.app',
+      PUBLISH_STORAGE_ENDPOINT: 'https://acc.r2.cloudflarestorage.com',
+      PUBLISH_STORAGE_BUCKET: 'sites',
+      PUBLISH_STORAGE_ACCESS_KEY_ID: 'key',
+      PUBLISH_STORAGE_SECRET_ACCESS_KEY: 'secret',
+    })
+    expect(config.publicBaseDomain).toBe('shopzoon.app')
+    expect(config.publishStorage).toEqual({
+      endpoint: 'https://acc.r2.cloudflarestorage.com',
+      region: 'auto',
+      bucket: 'sites',
+      accessKeyId: 'key',
+      secretAccessKey: 'secret',
+    })
+  })
+
+  it('leaves publish storage null when the credentials are incomplete', () => {
+    expect(
+      readServerConfig({ PUBLISH_STORAGE_ENDPOINT: 'https://x', PUBLISH_STORAGE_BUCKET: 'sites' })
+        .publishStorage,
+    ).toBeNull()
   })
 })

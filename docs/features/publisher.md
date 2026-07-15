@@ -330,12 +330,21 @@ every file to the **elected publish storage adapter** under a per-site key,
 Adapters live in `publishStorageRegistry` — the sibling of the media storage
 registry. The built-in local-disk adapter (reserved id `''`) is a **no-op push**
 (the bytes already live on local disk), so the default single-host install pays
-only one registry lookup. Plugins register remote adapters (S3, Cloudflare R2,
-GCS) implementing the `PublishStorageAdapter` contract (`putObject` /
-`deleteObject` by key); `resolveActive` returns the first-registered remote,
+only one registry lookup. `resolveActive` returns the first-registered remote,
 else local disk. The push is **derived, best-effort** state: it runs after the
 site is already live locally, and a failure is logged, never fatal — the local
 slot stays authoritative and the next publish re-ships the whole generation.
+
+**Enabling S3 / R2.** Set `PUBLISH_STORAGE_ENDPOINT`, `PUBLISH_STORAGE_BUCKET`,
+`PUBLISH_STORAGE_ACCESS_KEY_ID`, and `PUBLISH_STORAGE_SECRET_ACCESS_KEY` (plus an
+optional `PUBLISH_STORAGE_REGION`, default `auto`). At boot `server/index.ts`
+registers the first-party S3/R2 adapter (`server/publish/s3PublishStorage.ts`,
+built on Bun's native `Bun.S3Client` — no SDK), and every publish then pushes to
+the bucket under `sites/<siteId>/<relPath>`. R2 works by pointing the endpoint at
+`https://<account>.r2.cloudflarestorage.com`. Election is by env presence: with
+the vars unset nothing is registered and the push stays a local no-op. Plugins
+can also register their own `PublishStorageAdapter` (`putObject` / `deleteObject`
+by key) once the registration bridge lands.
 
 **Deferred (not yet wired):** a **persisted admin election** across *multiple*
 publish backends (mirroring media's `active_media_storage_adapter` — a single
@@ -392,7 +401,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
 | `server/publish/staticArtefact.ts`              | Per-site two-slot symlink swap (`swapSlot`) under `published/<siteId>/`, per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), reads (`readArtefact`), and the whole-slot enumerator (`readActiveSlotArtefacts`). Layer A. |
 | `server/publish/requestSite.ts`                 | `resolveSiteForRequest(db, host)` — maps a visitor request to its `site_id` (custom domain → `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain → default) before reading the per-site slot. 60 s per-host memo. |
-| `server/publish/publishStorageRegistry.ts`      | Publish storage adapter registry (sibling of `mediaStorageRegistry`). Built-in local-disk no-op (`''`); plugins register S3/R2 remotes. `resolveActive` picks the elected push target. |
+| `server/publish/publishStorageRegistry.ts`      | Publish storage adapter registry (sibling of `mediaStorageRegistry`). Built-in local-disk no-op (`''`); remotes register here. `resolveActive` picks the elected push target. |
+| `server/publish/s3PublishStorage.ts`            | First-party S3/R2 `PublishStorageAdapter` on Bun's native `Bun.S3Client` (no SDK). Registered at boot when `PUBLISH_STORAGE_*` is set; injectable client for tests. |
 | `server/publish/publishPush.ts`                 | `pushPublishedSite(uploadsDir, siteId)` — ships the just-swapped slot to the elected adapter, keyed `sites/<siteId>/<relPath>`. Best-effort, runs after the local swap. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |

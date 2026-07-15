@@ -1,3 +1,5 @@
+import type { S3PublishConfig } from './publish/s3PublishStorage'
+
 interface ServerConfig {
   port: number
   databaseUrl: string
@@ -10,6 +12,32 @@ interface ServerConfig {
    * the Host→site serving resolver. `null` disables subdomain matching.
    */
   publicBaseDomain: string | null
+  /**
+   * S3/R2 bucket the publish pipeline pushes baked output to. `null` when
+   * `PUBLISH_STORAGE_*` is unset — the push stays a local-disk no-op.
+   */
+  publishStorage: S3PublishConfig | null
+}
+
+/**
+ * Read the S3/R2 publish-storage config. All of endpoint/bucket/access key/secret
+ * must be present to enable it; region defaults to `auto` (the R2 convention).
+ */
+function readPublishStorage(
+  env: Record<string, string | undefined>,
+): S3PublishConfig | null {
+  const endpoint = env.PUBLISH_STORAGE_ENDPOINT?.trim()
+  const bucket = env.PUBLISH_STORAGE_BUCKET?.trim()
+  const accessKeyId = env.PUBLISH_STORAGE_ACCESS_KEY_ID?.trim()
+  const secretAccessKey = env.PUBLISH_STORAGE_SECRET_ACCESS_KEY?.trim()
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null
+  return {
+    endpoint,
+    region: env.PUBLISH_STORAGE_REGION?.trim() || 'auto',
+    bucket,
+    accessKeyId,
+    secretAccessKey,
+  }
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -94,5 +122,6 @@ export function readServerConfig(
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
     publicBaseDomain: env.PUBLIC_BASE_DOMAIN?.trim().toLowerCase() || null,
+    publishStorage: readPublishStorage(env),
   }
 }
