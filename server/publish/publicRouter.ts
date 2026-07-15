@@ -214,6 +214,7 @@ async function resolvePublicRoute(
  */
 export async function renderPublicResolution(
   db: DbClient,
+  siteId: string,
   url: URL,
   uploadsDir?: string,
 ): Promise<Response | null> {
@@ -227,7 +228,7 @@ export async function renderPublicResolution(
   // (e.g. `?loop_x_page=2`) falls through to Layer B so it is never served the
   // canonical URL's baked HTML; junk query strings still hit the disk artefact.
   if (uploadsDir && canonicalQuery === '') {
-    const html = await readArtefact(uploadsDir, url.pathname)
+    const html = await readArtefact(uploadsDir, siteId, url.pathname)
     if (html !== null) {
       return new Response(html, {
         headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -300,6 +301,7 @@ export async function renderPublicResolution(
  */
 export async function renderNotFoundResponse(
   db: DbClient,
+  siteId: string,
   url: URL,
   uploadsDir?: string,
 ): Promise<Response | null> {
@@ -307,7 +309,7 @@ export async function renderNotFoundResponse(
 
   // ── Layer A: baked 404 artefact ───────────────────────────────────────────
   if (uploadsDir) {
-    const html = await readArtefact(uploadsDir, NOT_FOUND_ARTEFACT_URL_PATH)
+    const html = await readArtefact(uploadsDir, siteId, NOT_FOUND_ARTEFACT_URL_PATH)
     if (html !== null) {
       return new Response(html, { status: 404, headers: htmlHeaders })
     }

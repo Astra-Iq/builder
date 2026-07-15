@@ -278,6 +278,16 @@ Four bundles per page (each hashed independently): `reset`, `framework`,
 
 ### Static publishing — everything baked to disk
 
+Published output is baked **per site** (the `site_id` tenant key). Each site owns
+an isolated two-slot tree under `uploads/published/<siteId>/{current,a,b}`, so a
+publish, slot swap, or read for one merchant never touches another's. Every
+`staticArtefact.ts` function takes a `siteId` alongside `uploadsDir`; the visitor
+router maps an inbound request to its site through the `resolveSiteForRequest`
+seam (`server/publish/requestSite.ts`) before reading the slot. That seam
+currently resolves every public request to the single default site — a real
+Host / custom-domain → `site_id` lookup slots in there without touching any
+serving handler.
+
 A full publish (`publishDraftSite`) bakes **every page** plus all of its assets
 into the publish slot:
 
@@ -441,8 +451,8 @@ publishDraftSite (server/publish/publishSite.ts)
     │      version-keyed memo in siteCssBundle.ts; userStyles per page)
     │         (atomic per-file: tmp + rename; per-page try/catch)
     │
-    ├─→ swapSlot(uploadsDir, newActiveSlot)
-    │     uploads/published/current → flips atomically (rename of a symlink
+    ├─→ swapSlot(uploadsDir, siteId, newActiveSlot)
+    │     uploads/published/<siteId>/current → flips atomically (rename of a symlink
     │     is a single-inode swap; in-flight readers keep fds into the OLD
     │     slot until they close)
     │
@@ -496,7 +506,7 @@ tryServePublicRoute (server/router.ts)
 ```
 
 The visitor-facing artefacts are:
-1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
+1. **Disk files in the active slot** (`uploads/published/<siteId>/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
 2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
 3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
 

@@ -206,7 +206,7 @@ async function publishDraftSiteLocked(
   const nextPublishVersion = getPublishVersion() + 1
   if (uploadsDir) {
     try {
-      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, siteId)
 
       // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a
@@ -291,7 +291,7 @@ async function publishDraftSiteLocked(
       for (const [publicPath, bytes] of assetsByPath) {
         await writeStaticAsset(slotDir, publicPath, bytes)
       }
-      await swapSlot(uploadsDir, slot)
+      await swapSlot(uploadsDir, siteId, slot)
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
     }

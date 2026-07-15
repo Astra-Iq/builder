@@ -112,11 +112,11 @@ describe('site_publish MCP tool', () => {
     expect(result.result?.isError).toBeFalsy()
     expect(JSON.stringify(result.result?.content)).toContain('publishedPages')
 
-    const html = await readArtefact(uploadsDir, '/')
+    const html = await readArtefact(uploadsDir, 'default', '/')
     expect(html).not.toBeNull()
     const cssPaths = [...(html ?? '').matchAll(/href="(\/_instatic\/css\/[^"]+\.css)"/g)]
       .map((match) => match[1]!)
-    const cssAssets = await Promise.all(cssPaths.map((path) => readStaticAsset(uploadsDir, path)))
+    const cssAssets = await Promise.all(cssPaths.map((path) => readStaticAsset(uploadsDir, 'default', path)))
     const css = cssAssets
       .filter((asset): asset is Uint8Array => asset !== null)
       .map((asset) => new TextDecoder().decode(asset))

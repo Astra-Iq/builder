@@ -35,9 +35,9 @@ describe('removeDataRowArtefact', () => {
       insert into data_rows (id, table_id, slug, status, cells_json)
       values (${rowId}, ${'pages'}, ${slug}, ${status}, ${{ title: 'Ghost', slug }})`
     const artefactPath = `/${slug}`
-    await updateArtefactInPlace(uploadsDir, artefactPath, '<html>ghost content</html>')
+    await updateArtefactInPlace(uploadsDir, 'default', artefactPath, '<html>ghost content</html>')
     // Establish the `current` symlink so readArtefact (Layer A) can see it.
-    await swapSlot(uploadsDir, await getActiveSlot(uploadsDir))
+    await swapSlot(uploadsDir, 'default', await getActiveSlot(uploadsDir, 'default'))
     return {
       db,
       uploadsDir,
@@ -54,9 +54,9 @@ describe('removeDataRowArtefact', () => {
   test('removes the baked artefact for an unpublished row', async () => {
     const ctx = await withRow('unpublished')
     try {
-      expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toContain('ghost content')
-      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, ctx.slug)
-      expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toBeNull()
+      expect(await readArtefact(ctx.uploadsDir, 'default', ctx.artefactPath)).toContain('ghost content')
+      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, 'default', ctx.rowId, ctx.slug)
+      expect(await readArtefact(ctx.uploadsDir, 'default', ctx.artefactPath)).toBeNull()
     } finally {
       await ctx.cleanup()
     }
@@ -66,9 +66,9 @@ describe('removeDataRowArtefact', () => {
     const ctx = await withRow('published')
     try {
       await ctx.db`update data_rows set deleted_at = current_timestamp where id = ${ctx.rowId}`
-      expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toContain('ghost content')
-      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, ctx.rowId, ctx.slug)
-      expect(await readArtefact(ctx.uploadsDir, ctx.artefactPath)).toBeNull()
+      expect(await readArtefact(ctx.uploadsDir, 'default', ctx.artefactPath)).toContain('ghost content')
+      await removeDataRowArtefact(ctx.db, ctx.uploadsDir, 'default', ctx.rowId, ctx.slug)
+      expect(await readArtefact(ctx.uploadsDir, 'default', ctx.artefactPath)).toBeNull()
     } finally {
       await ctx.cleanup()
     }

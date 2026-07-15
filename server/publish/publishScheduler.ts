@@ -94,7 +94,7 @@ export async function tickPublishScheduler(db: DbClient, uploadsDir?: string): P
   await withSchedulerLeaderLock(db, ADVISORY_LOCK_KEY, '[publish-scheduler]', async () => {
     const due = await listDuePublishSchedules(db, new Date().toISOString(), TICK_BATCH_LIMIT)
     for (const entry of due) {
-      await fireOne(db, entry.rowId, uploadsDir)
+      await fireOne(db, entry.siteId, entry.rowId, uploadsDir)
     }
   })
 }
@@ -108,13 +108,13 @@ export async function tickPublishScheduler(db: DbClient, uploadsDir?: string): P
  * status = 'scheduled'` is a no-op because the first already flipped
  * it to `'published'`. (See `publishDataRow`'s transaction.)
  */
-async function fireOne(db: DbClient, rowId: string, uploadsDir?: string): Promise<void> {
+async function fireOne(db: DbClient, siteId: string, rowId: string, uploadsDir?: string): Promise<void> {
   try {
     // `publisherUserId: null` is the "system actor" path — the publish
     // wasn't initiated by a logged-in user, it was the scheduler tick.
     // The `published_by_user_id` column lands as null which downstream
     // UI renders as "Scheduled publish" instead of a user attribution.
-    await publishDataRow(db, rowId, null, uploadsDir)
+    await publishDataRow(db, siteId, rowId, null, uploadsDir)
     await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'system' })
   } catch (err) {
     console.error(`[publish-scheduler] failed to publish row ${rowId}:`, err)

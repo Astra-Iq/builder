@@ -38,6 +38,7 @@ export interface PublishDataRowResult {
 
 export async function publishDataRow(
   db: DbClient,
+  siteId: string,
   rowId: string,
   /**
    * The user attributed as the publisher. `null` is allowed for system
@@ -49,11 +50,12 @@ export async function publishDataRow(
 ): Promise<PublishDataRowResult> {
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDataRowLocked(db, rowId, publisherUserId, uploadsDir))
+  return withPublishLock(() => publishDataRowLocked(db, siteId, rowId, publisherUserId, uploadsDir))
 }
 
 async function publishDataRowLocked(
   db: DbClient,
+  siteId: string,
   rowId: string,
   publisherUserId: string | null,
   uploadsDir?: string,
@@ -68,7 +70,7 @@ async function publishDataRowLocked(
     // synchronous statement right after this await resolves, so a hole-shell
     // baked here carries the version that becomes current with no gap.
     const nextPublishVersion = getPublishVersion() + 1
-    await writeDataRowArtefact(db, uploadsDir, row, previousRoute, nextPublishVersion).catch((err) => {
+    await writeDataRowArtefact(db, uploadsDir, siteId, row, previousRoute, nextPublishVersion).catch((err) => {
       console.error('[publish:row] static artefact write failed (live renderer remains active):', err)
     })
   }
@@ -98,6 +100,7 @@ async function publishDataRowLocked(
 async function writeDataRowArtefact(
   db: DbClient,
   uploadsDir: string,
+  siteId: string,
   publishedRow: DataRow,
   previousRoute: PreviousPublishedRoute | null,
   publishVersion: number,
@@ -108,7 +111,7 @@ async function writeDataRowArtefact(
   // Remove old artefact when the slug changed (old URL is now stale).
   if (previousRoute && previousRouteChanged(previousRoute, publishedRow.slug)) {
     const oldPath = publicDataPath(previousRoute.routeBase, previousRoute.slug)
-    await removeArtefactInPlace(uploadsDir, oldPath).catch((err) => {
+    await removeArtefactInPlace(uploadsDir, siteId, oldPath).catch((err) => {
       console.error('[publish:row] failed to remove stale artefact at', oldPath, err)
     })
   }
@@ -135,7 +138,7 @@ async function writeDataRowArtefact(
   if (!rendered) return
 
   const html = await applyPublishedHtmlPipeline(rendered, db)
-  await updateArtefactInPlace(uploadsDir, newPath, html)
+  await updateArtefactInPlace(uploadsDir, siteId, newPath, html)
 }
 
 /**
@@ -150,10 +153,11 @@ async function writeDataRowArtefact(
 export async function removeDataRowArtefact(
   db: DbClient,
   uploadsDir: string,
+  siteId: string,
   rowId: string,
   slug: string,
 ): Promise<void> {
   const routeBase = await getRowTableRouteBase(db, rowId)
   if (routeBase === null) return
-  await removeArtefactInPlace(uploadsDir, publicDataPath(routeBase, slug))
+  await removeArtefactInPlace(uploadsDir, siteId, publicDataPath(routeBase, slug))
 }

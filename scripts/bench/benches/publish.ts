@@ -229,7 +229,7 @@ export const publishBench: BenchModule = {
         const bytesBefore = dbBytes(fresh.path)
         log.step(`  publishing ${fmtNum(n)} pages × ~${NODES_PER_PAGE} nodes…`)
         const t0 = performance.now()
-        const result = await api.publishDraftSite(fresh.db, ADMIN_USER_ID, uploadsDir)
+        const result = await api.publishDraftSite(fresh.db, 'default', ADMIN_USER_ID, uploadsDir)
         const wallMs = performance.now() - t0
         const growth = dbBytes(fresh.path) - bytesBefore
         if (result.publishedPages !== n) {
@@ -296,7 +296,7 @@ export const publishBench: BenchModule = {
           // No uploadsDir → Layer A is skipped; the request resolves the route
           // against the DB and hits the module-level Layer B LRU when warm.
           const url = new URL('http://localhost/page-1')
-          const warmup = await api.renderPublicResolution(published.db, url)
+          const warmup = await api.renderPublicResolution(published.db, 'default', url)
           if (!warmup || warmup.status !== 200) {
             throw new Error(`expected 200 for /page-1, got ${warmup?.status ?? 'null'}`)
           }
@@ -304,7 +304,7 @@ export const publishBench: BenchModule = {
           const samples: number[] = []
           for (let i = 0; i < iters; i++) {
             const t0 = performance.now()
-            const res = await api.renderPublicResolution(published.db, url)
+            const res = await api.renderPublicResolution(published.db, 'default', url)
             samples.push(performance.now() - t0)
             if (!res) throw new Error('warm request unexpectedly resolved to not-found')
           }
@@ -334,14 +334,14 @@ export const publishBench: BenchModule = {
           const iters = ctx.quick ? 50 : 300
           // Warmup
           for (let i = 0; i < 3; i++) {
-            const res = await api.renderPublicResolution(published.db, url)
+            const res = await api.renderPublicResolution(published.db, 'default', url)
             if (res !== null) throw new Error('404 probe unexpectedly resolved')
             await api.getSetupStatus(published.db)
           }
           const samples: number[] = []
           for (let i = 0; i < iters; i++) {
             const t0 = performance.now()
-            await api.renderPublicResolution(published.db, url)
+            await api.renderPublicResolution(published.db, 'default', url)
             await api.getSetupStatus(published.db)
             samples.push(performance.now() - t0)
           }

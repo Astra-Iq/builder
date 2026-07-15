@@ -3,6 +3,7 @@ import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { handleCmsRequest } from './handlers/cms'
 import type { DbClient } from './db/client'
 import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
+import { resolveSiteForRequest } from './publish/requestSite'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
@@ -208,7 +209,8 @@ async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: 
   // published pages serve their scripts straight off disk (no DB round-trip,
   // no rebuild). Content-hashed filenames keep `immutable` caching correct.
   if (runtime.uploadsDir) {
-    const bytes = await readStaticAsset(runtime.uploadsDir, pathname)
+    const siteId = await resolveSiteForRequest(runtime.db, req.headers.get('host'))
+    const bytes = await readStaticAsset(runtime.uploadsDir, siteId, pathname)
     if (bytes) {
       return binaryResponse(bytes, {
         headers: {
@@ -278,7 +280,8 @@ async function tryServeRuntimePackageNamespace(req: Request, _runtime: ServerRun
  */
 async function tryServeSiteCssNamespace(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
   if (req.method !== 'GET' || !pathname.startsWith('/_instatic/css/')) return null
-  return (await serveSiteCss(runtime.db, pathname, runtime.uploadsDir)) ?? new Response('Not found', { status: 404 })
+  const siteId = await resolveSiteForRequest(runtime.db, req.headers.get('host'))
+  return (await serveSiteCss(runtime.db, siteId, pathname, runtime.uploadsDir)) ?? new Response('Not found', { status: 404 })
 }
 
 /**
@@ -440,7 +443,8 @@ async function tryServeAdminApp(
  */
 async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
-  return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
+  const siteId = await resolveSiteForRequest(runtime.db, req.headers.get('host'))
+  return await renderPublicResolution(runtime.db, siteId, url, runtime.uploadsDir)
 }
 
 /**
@@ -452,7 +456,8 @@ async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: UR
  */
 async function tryServeNotFoundPage(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
-  return await renderNotFoundResponse(runtime.db, url, runtime.uploadsDir)
+  const siteId = await resolveSiteForRequest(runtime.db, req.headers.get('host'))
+  return await renderNotFoundResponse(runtime.db, siteId, url, runtime.uploadsDir)
 }
 
 // ---------------------------------------------------------------------------
@@ -527,7 +532,7 @@ registerVersionedCacheReset(() => {
   cssFallbackVersion = -1
 })
 
-async function serveSiteCss(db: DbClient, pathname: string, uploadsDir?: string): Promise<Response | null> {
+async function serveSiteCss(db: DbClient, siteId: string, pathname: string, uploadsDir?: string): Promise<Response | null> {
   const filename = pathname.slice('/_instatic/css/'.length)
   const match = filename.match(/^(reset|framework|style|userStyles)-([a-f0-9]{12})\.css$/)
   if (!match) return null
@@ -537,7 +542,7 @@ async function serveSiteCss(db: DbClient, pathname: string, uploadsDir?: string)
 
   // Disk-first.
   if (uploadsDir) {
-    const bytes = await readStaticAsset(uploadsDir, pathname)
+    const bytes = await readStaticAsset(uploadsDir, siteId, pathname)
     if (bytes) {
       return cssResponse(toArrayBuffer(bytes), requestedHash)
     }

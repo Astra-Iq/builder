@@ -78,9 +78,9 @@ describe('server router — Layer A disk artefact fast-path', () => {
 
   it('serves a baked disk artefact without a DB snapshot lookup', async () => {
     // Bake an artefact for /about
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/about', '<html><body>Baked about</body></html>')
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     // DB that tracks snapshot lookups — should never be called for a disk hit
     let snapshotQueried = false
@@ -108,9 +108,9 @@ describe('server router — Layer A disk artefact fast-path', () => {
 
   it('falls through to the resolver when the URL has a render-affecting (loop pagination) query', async () => {
     // Bake an artefact for /about
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/about', '<html><body>Baked about</body></html>')
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     // A loop-pagination query affects rendering, so the disk path is skipped
     // (junk queries instead serve the baked artefact — ISS-032).
@@ -126,9 +126,9 @@ describe('server router — Layer A disk artefact fast-path', () => {
 
   it('falls through to the resolver when no artefact exists for the URL', async () => {
     // uploadsDir exists but has no artefact for /contact
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/about', '<html>about</html>')
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     const res = await handleServerRequest(
       new Request('http://localhost/contact'),

@@ -145,9 +145,9 @@ describe('CMS dynamic template routes', () => {
 
     try {
       // Bake a pre-rendered artefact for the template route
-      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
       await writeArtefact(slotDir, '/posts/dynamic-post', '<html><body><h1>Baked template post</h1></body></html>')
-      await swapSlot(uploadsDir, slot)
+      await swapSlot(uploadsDir, 'default', slot)
 
       // DB that would error if the snapshot path were consulted
       const db = createFakeDb(async (sql: string): Promise<DbResult> => {
@@ -179,9 +179,9 @@ describe('CMS dynamic template routes', () => {
     try {
       // Bake an artefact — but the loop-pagination query affects the render so
       // it must be bypassed (junk queries instead serve the artefact — ISS-032)
-      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
       await writeArtefact(slotDir, '/posts/dynamic-post', '<html>baked</html>')
-      await swapSlot(uploadsDir, slot)
+      await swapSlot(uploadsDir, 'default', slot)
 
       const page = makePage({
         root: { moduleId: 'base.body', props: {}, children: ['title'] },

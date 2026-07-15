@@ -2,15 +2,18 @@
  * Slot-aware static-artefact IO helpers for Layer A of the publishing
  * architecture.
  *
- * Layout on disk:
+ * Layout on disk — one isolated tree per site (`siteId` = tenant key):
  *
- *   <uploadsDir>/published/
+ *   <uploadsDir>/published/<siteId>/
  *     current  -> a | b   (symlink; visitor router reads through this)
  *     a/                  (active or inactive slot)
  *       index.html        (for URL /)
  *       about.html        (for URL /about)
  *       posts/hello.html  (for URL /posts/hello)
  *     b/                  (the other slot — mirror structure)
+ *
+ * Every publish, slot swap, and read is scoped by `siteId`, so one merchant's
+ * baked site never touches another's.
  *
  * The two-slot symlink swap guarantees that `current` always points to a
  * COMPLETE, valid slot. Visitors see either the old generation or the new
@@ -63,16 +66,43 @@ export const NOT_FOUND_ARTEFACT_URL_PATH = '/404'
 // Private path helpers
 // ---------------------------------------------------------------------------
 
-function getPublishedDir(uploadsDir: string): string {
-  return join(uploadsDir, 'published')
+/**
+ * Validate a `siteId` as a single safe path segment before it is joined into
+ * an on-disk publish path. A tenant id reaches this function from the session
+ * (`user.currentSiteId`) or a data row's `site_id`, so it is trusted, but the
+ * defence-in-depth check here guarantees one tenant's published tree can never
+ * escape into another's — an empty, `.`/`..`, slash-bearing, or absolute id is
+ * rejected outright.
+ */
+function assertSafeSiteId(siteId: string): string {
+  if (
+    siteId === '' ||
+    siteId === '.' ||
+    siteId === '..' ||
+    siteId.includes('/') ||
+    siteId.includes('\\') ||
+    isAbsolute(siteId)
+  ) {
+    throw new Error(`Publish site id "${siteId}" is not a valid path segment`)
+  }
+  return siteId
 }
 
-function getSlotDir(uploadsDir: string, slot: Slot): string {
-  return join(getPublishedDir(uploadsDir), slot)
+/**
+ * Root of one site's published tree: `<uploadsDir>/published/<siteId>/`.
+ * Every merchant's baked output lives under its own `siteId` directory so a
+ * publish, slot swap, or read for one tenant never touches another's.
+ */
+function getPublishedDir(uploadsDir: string, siteId: string): string {
+  return join(uploadsDir, 'published', assertSafeSiteId(siteId))
 }
 
-function getCurrentSymlinkPath(uploadsDir: string): string {
-  return join(getPublishedDir(uploadsDir), 'current')
+function getSlotDir(uploadsDir: string, siteId: string, slot: Slot): string {
+  return join(getPublishedDir(uploadsDir, siteId), slot)
+}
+
+function getCurrentSymlinkPath(uploadsDir: string, siteId: string): string {
+  return join(getPublishedDir(uploadsDir, siteId), 'current')
 }
 
 /**
@@ -179,9 +209,9 @@ function isNodeError(err: unknown): err is NodeJS.ErrnoException {
  * inactive slot defaults to `'b'` in that case so the first
  * `prepareInactiveSlot` call writes into `b/` and swaps to it).
  */
-export async function getActiveSlot(uploadsDir: string): Promise<Slot> {
+export async function getActiveSlot(uploadsDir: string, siteId: string): Promise<Slot> {
   try {
-    const target = (await readlink(getCurrentSymlinkPath(uploadsDir))).trim()
+    const target = (await readlink(getCurrentSymlinkPath(uploadsDir, siteId))).trim()
     if (target === 'a' || target === 'b') return target
   } catch {
     // Symlink doesn't exist — first ever publish
@@ -193,8 +223,8 @@ export async function getActiveSlot(uploadsDir: string): Promise<Slot> {
  * Return the inactive slot — whichever of `'a'` and `'b'` the `current`
  * symlink does NOT point to. Defaults to `'b'` on first run (no symlink).
  */
-export async function getInactiveSlot(uploadsDir: string): Promise<Slot> {
-  const active = await getActiveSlot(uploadsDir)
+export async function getInactiveSlot(uploadsDir: string, siteId: string): Promise<Slot> {
+  const active = await getActiveSlot(uploadsDir, siteId)
   return active === 'a' ? 'b' : 'a'
 }
 
@@ -212,12 +242,13 @@ export async function getInactiveSlot(uploadsDir: string): Promise<Slot> {
  */
 export async function prepareInactiveSlot(
   uploadsDir: string,
+  siteId: string,
 ): Promise<{ slot: Slot; slotDir: string }> {
-  const slot = await getInactiveSlot(uploadsDir)
-  const dir = getSlotDir(uploadsDir, slot)
+  const slot = await getInactiveSlot(uploadsDir, siteId)
+  const dir = getSlotDir(uploadsDir, siteId, slot)
 
-  // Ensure the parent published/ directory exists before touching the slot
-  await mkdir(getPublishedDir(uploadsDir), { recursive: true })
+  // Ensure the parent published/<siteId>/ directory exists before touching the slot
+  await mkdir(getPublishedDir(uploadsDir, siteId), { recursive: true })
 
   // Wipe any stale files from the previous generation (safe: inactive slot)
   await rm(dir, { recursive: true, force: true })
@@ -271,12 +302,12 @@ export async function writeArtefact(
  * Layer B live-render path. Production runs Linux/Docker and always takes the
  * atomic branch; the fallback is a dev-on-Windows affordance only.
  */
-export async function swapSlot(uploadsDir: string, targetSlot: Slot): Promise<void> {
-  const publishDir = getPublishedDir(uploadsDir)
-  const currentPath = getCurrentSymlinkPath(uploadsDir)
+export async function swapSlot(uploadsDir: string, siteId: string, targetSlot: Slot): Promise<void> {
+  const publishDir = getPublishedDir(uploadsDir, siteId)
+  const currentPath = getCurrentSymlinkPath(uploadsDir, siteId)
   const tmpPath = join(publishDir, 'current.tmp')
 
-  // Ensure the published/ directory exists (may be first ever publish)
+  // Ensure the published/<siteId>/ directory exists (may be first ever publish)
   await mkdir(publishDir, { recursive: true })
 
   // Remove any leftover tmp symlink from a previous crashed publish
@@ -367,7 +398,11 @@ async function removeSymlinkEntry(path: string): Promise<void> {
  * Cheap enough to call on every canonical-query-empty visitor request (Layer A
  * fast path: 1 syscall on cache hit, no DB).
  */
-export async function readArtefact(uploadsDir: string, urlPath: string): Promise<string | null> {
+export async function readArtefact(
+  uploadsDir: string,
+  siteId: string,
+  urlPath: string,
+): Promise<string | null> {
   // Validate the URL and compute the relative disk path
   let diskRelPath: string
   try {
@@ -377,11 +412,18 @@ export async function readArtefact(uploadsDir: string, urlPath: string): Promise
     return null
   }
 
-  // Open through `current/<path>` so the OS follows the symlink atomically
-  // inside open(2).  The same `filePath` value is used on every attempt —
-  // each call to readFile re-resolves the `current` symlink at the OS level,
-  // so after a swap the next attempt automatically reads from the new slot.
-  const filePath = join(getPublishedDir(uploadsDir), 'current', diskRelPath)
+  // Open through `<siteId>/current/<path>` so the OS follows the symlink
+  // atomically inside open(2).  The same `filePath` value is used on every
+  // attempt — each call to readFile re-resolves the `current` symlink at the
+  // OS level, so after a swap the next attempt automatically reads from the
+  // new slot.
+  let filePath: string
+  try {
+    filePath = join(getPublishedDir(uploadsDir, siteId), 'current', diskRelPath)
+  } catch {
+    // Unsafe siteId — treat as a miss (callers expect null, never a throw).
+    return null
+  }
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
@@ -422,11 +464,12 @@ export async function readArtefact(uploadsDir: string, urlPath: string): Promise
  */
 export async function updateArtefactInPlace(
   uploadsDir: string,
+  siteId: string,
   urlPath: string,
   html: string,
 ): Promise<void> {
-  const slot = await getActiveSlot(uploadsDir)
-  const dir = getSlotDir(uploadsDir, slot)
+  const slot = await getActiveSlot(uploadsDir, siteId)
+  const dir = getSlotDir(uploadsDir, siteId, slot)
   await writeArtefact(dir, urlPath, html)
 }
 
@@ -442,10 +485,11 @@ export async function updateArtefactInPlace(
  */
 export async function removeArtefactInPlace(
   uploadsDir: string,
+  siteId: string,
   urlPath: string,
 ): Promise<void> {
-  const slot = await getActiveSlot(uploadsDir)
-  const dir = getSlotDir(uploadsDir, slot)
+  const slot = await getActiveSlot(uploadsDir, siteId)
+  const dir = getSlotDir(uploadsDir, siteId, slot)
 
   let filePath: string
   try {
@@ -500,7 +544,11 @@ export async function writeStaticAsset(
  * absent, unsafe path). Shares `readArtefact`'s retry loop so it survives the
  * brief slot-swap window on every OS.
  */
-export async function readStaticAsset(uploadsDir: string, publicPath: string): Promise<Uint8Array | null> {
+export async function readStaticAsset(
+  uploadsDir: string,
+  siteId: string,
+  publicPath: string,
+): Promise<Uint8Array | null> {
   let relPath: string
   try {
     relPath = safeRelPath(publicPath)
@@ -509,7 +557,13 @@ export async function readStaticAsset(uploadsDir: string, publicPath: string): P
   }
   if (relPath === '' || relPath.endsWith('/')) return null
 
-  const filePath = join(getPublishedDir(uploadsDir), 'current', relPath)
+  let filePath: string
+  try {
+    filePath = join(getPublishedDir(uploadsDir, siteId), 'current', relPath)
+  } catch {
+    // Unsafe siteId — treat as a miss.
+    return null
+  }
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {

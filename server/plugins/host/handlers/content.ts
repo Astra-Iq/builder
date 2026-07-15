@@ -340,7 +340,7 @@ export async function handleContentEntriesPublish(
     return
   }
 
-  const result = await publishDataRow(db, entryId, null)
+  const result = await publishDataRow(db, DEFAULT_SITE_ID, entryId, null)
   await emitEntryUpdated(tableSlug, entryId, ['status'], actor)
   replyApiOk(msg.pluginId, msg.correlationId, rowToEntry(result.row, tableSlug))
 }
