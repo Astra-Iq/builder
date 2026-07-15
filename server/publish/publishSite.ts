@@ -50,6 +50,7 @@ import {
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
 import { pushPublishedSite } from './publishPush'
+import { syncSiteHostMappings } from './edgeHostMap'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 
 interface PublishResult {
@@ -316,6 +317,15 @@ async function publishDraftSiteLocked(
     } catch (err) {
       console.error('[publish:site] object-storage push failed (local slot remains live):', err)
     }
+  }
+
+  // Edge host-map sync: upsert host → siteId into Cloudflare KV so the edge
+  // Worker can resolve this site's subdomain / custom domain. Best-effort and
+  // no-op unless PUBLISH_KV_* is configured.
+  try {
+    await syncSiteHostMappings(db, siteId)
+  } catch (err) {
+    console.error('[publish:site] edge host-map sync failed (serving unaffected):', err)
   }
 
   return { publishedPages }

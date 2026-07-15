@@ -43,6 +43,13 @@ if (config.publishStorage) {
   const { createS3PublishAdapter } = await import('./publish/s3PublishStorage')
   publishStorageRegistry.register(createS3PublishAdapter(config.publishStorage))
 }
+// Edge host-map sync: when PUBLISH_KV_* is set, each publish upserts
+// host → siteId into the Cloudflare KV namespace the edge Worker reads.
+if (config.cloudflareKv) {
+  const { createCloudflareKvClient } = await import('./publish/cloudflareKv')
+  const { configureEdgeHostMap } = await import('./publish/edgeHostMap')
+  configureEdgeHostMap(createCloudflareKvClient(config.cloudflareKv))
+}
 await activateInstalledServerPlugins(db, config.uploadsDir)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.

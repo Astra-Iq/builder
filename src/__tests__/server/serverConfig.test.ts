@@ -101,6 +101,7 @@ describe('readServerConfig', () => {
       publicOrigins: [],
       publicBaseDomain: null,
       publishStorage: null,
+      cloudflareKv: null,
     })
   })
 
@@ -125,6 +126,7 @@ describe('readServerConfig', () => {
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
       publicBaseDomain: null,
       publishStorage: null,
+      cloudflareKv: null,
     })
   })
 
@@ -150,6 +152,21 @@ describe('readServerConfig', () => {
     expect(
       readServerConfig({ PUBLISH_STORAGE_ENDPOINT: 'https://x', PUBLISH_STORAGE_BUCKET: 'sites' })
         .publishStorage,
+    ).toBeNull()
+  })
+
+  it('reads the Cloudflare KV config from env (all three required)', () => {
+    expect(
+      readServerConfig({
+        PUBLISH_KV_ACCOUNT_ID: 'acct1',
+        PUBLISH_KV_NAMESPACE_ID: 'ns1',
+        PUBLISH_KV_API_TOKEN: 'tok1',
+      }).cloudflareKv,
+    ).toEqual({ accountId: 'acct1', namespaceId: 'ns1', apiToken: 'tok1' })
+
+    expect(
+      readServerConfig({ PUBLISH_KV_ACCOUNT_ID: 'acct1', PUBLISH_KV_NAMESPACE_ID: 'ns1' })
+        .cloudflareKv,
     ).toBeNull()
   })
 })

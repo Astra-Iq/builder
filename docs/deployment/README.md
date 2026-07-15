@@ -2,7 +2,7 @@
 
 This index maps supported deployment targets to the files, variables, and persistence rules they need.
 
-Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, `PUBLIC_ORIGIN`, `TRUSTED_PROXY_CIDRS`, `PUBLIC_BASE_DOMAIN`, and `PUBLISH_STORAGE_*`. Reversible server secrets, including AI provider credentials, plugin secret settings, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
+Instatic is one Bun server packaged by the root `Dockerfile`. The server reads runtime configuration from `server/config.ts`: `PORT`, `DATABASE_URL`, `UPLOADS_DIR`, `STATIC_DIR`, `PUBLIC_ORIGIN`, `TRUSTED_PROXY_CIDRS`, `PUBLIC_BASE_DOMAIN`, `PUBLISH_STORAGE_*`, and `PUBLISH_KV_*`. Reversible server secrets, including AI provider credentials, plugin secret settings, and MFA TOTP seeds, are encrypted with `INSTATIC_SECRET_KEY` when configured. Database migrations run automatically on boot in `server/index.ts`.
 
 ---
 
@@ -34,6 +34,7 @@ PUBLIC_ORIGIN        comma-separated public origin(s) the CSRF check trusts; aut
 TRUSTED_PROXY_CIDRS  optional; trusts proxy socket peers for forwarded client-IP attribution only (audit logs, rate-limit keys) — NOT used for CSRF
 PUBLIC_BASE_DOMAIN   optional; apex domain merchant sites hang off as <slug>.<PUBLIC_BASE_DOMAIN> for per-site serving (custom domains resolve via each site's custom_domain regardless)
 PUBLISH_STORAGE_*    optional; when ENDPOINT + BUCKET + ACCESS_KEY_ID + SECRET_ACCESS_KEY are set, each publish is pushed to that S3/R2 bucket under sites/<siteId>/… (REGION defaults to "auto")
+PUBLISH_KV_*         optional; ACCOUNT_ID + NAMESPACE_ID + API_TOKEN sync host → siteId into Cloudflare KV on each publish so the edge Worker (deploy/cloudflare/) can serve per-merchant
 ```
 
 Generate `INSTATIC_SECRET_KEY` with `bun run scripts/generate-secret-key.ts` before adding Anthropic, OpenAI, or OpenRouter credentials or enabling TOTP MFA in production. Without it, the admin can load but saving reversible secrets fails because there is no stable encryption key.
@@ -106,7 +107,9 @@ Any S3-compatible store works — AWS S3, Cloudflare R2, MinIO, RustFS — becau
 - **Objects upload private.** To serve them, make the bucket/prefix public-readable (e.g. `mc anonymous set download <alias>/<bucket>`) or front it with a credentialed CDN. The app itself does not read pages back out of the bucket — it still serves from local disk; the push is the edge-offload side.
 - Multi-tenant serving from the app is controlled separately by `PUBLIC_BASE_DOMAIN` (merchant subdomains) plus each site's `custom_domain`.
 
-Mechanics: [../features/publisher.md](../features/publisher.md) → "Enabling S3 / R2".
+To actually **serve those bucket objects at the edge** per merchant, deploy the Cloudflare Worker in [../../deploy/cloudflare/](../../deploy/cloudflare/): set `PUBLISH_KV_*` so each publish syncs `host → siteId` into a Cloudflare KV namespace, and the Worker resolves the request Host through KV and serves the object out of R2. See that directory's README for DNS, Cloudflare-for-SaaS custom-domain certs, and `wrangler` deploy steps.
+
+Mechanics: [../features/publisher.md](../features/publisher.md) → "Enabling S3 / R2" and "Serving from the edge".
 
 ## Docs Inventory
 

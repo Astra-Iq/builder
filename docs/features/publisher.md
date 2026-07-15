@@ -346,6 +346,24 @@ the vars unset nothing is registered and the push stays a local no-op. Plugins
 can also register their own `PublishStorageAdapter` (`putObject` / `deleteObject`
 by key) once the registration bridge lands.
 
+### Serving from the edge (Cloudflare Worker + KV)
+
+Pushing to R2 is the write side; serving those objects per merchant at the edge is
+a Cloudflare Worker (`deploy/cloudflare/`). The bucket is keyed by the immutable
+`siteId`, but a visitor request carries only a hostname, so the Worker needs a
+`host → siteId` map. The app keeps that map in Cloudflare KV: when `PUBLISH_KV_*`
+is set, boot wires a KV client (`server/publish/cloudflareKv.ts`) and every publish
+calls `syncSiteHostMappings` (`server/publish/edgeHostMap.ts`), which upserts the
+site's `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain and its `custom_domain` → `siteId`.
+Best-effort and no-op when unconfigured, exactly like the object push.
+
+The Worker then resolves `host → siteId` via KV, maps the URL path to the baked
+object key (the same `/`→`index.html` / `.html` rules as `staticArtefact.ts`),
+serves it from R2 with the stored Content-Type, and falls back to `404.html`. See
+`deploy/cloudflare/README.md` for DNS, Cloudflare-for-SaaS custom-domain certs, and
+deploy steps. Removing stale KV entries on slug change / suspend, and an admin
+setter for `custom_domain`, are follow-ups (the sync fires on publish today).
+
 **Deferred (not yet wired):** a **persisted admin election** across *multiple*
 publish backends (mirroring media's `active_media_storage_adapter` — a single
 first-party adapter is elected by env presence today, see below); the QuickJS
@@ -403,6 +421,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/requestSite.ts`                 | `resolveSiteForRequest(db, host)` — maps a visitor request to its `site_id` (custom domain → `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain → default) before reading the per-site slot. 60 s per-host memo. |
 | `server/publish/publishStorageRegistry.ts`      | Publish storage adapter registry (sibling of `mediaStorageRegistry`). Built-in local-disk no-op (`''`); remotes register here. `resolveActive` picks the elected push target. |
 | `server/publish/s3PublishStorage.ts`            | First-party S3/R2 `PublishStorageAdapter` on Bun's native `Bun.S3Client` (no SDK). Registered at boot when `PUBLISH_STORAGE_*` is set; injectable client for tests. |
+| `server/publish/cloudflareKv.ts` / `edgeHostMap.ts` | Edge host-map sync: CF KV REST client + `syncSiteHostMappings` upserting `host → siteId` (subdomain + custom domain) on publish so the `deploy/cloudflare/` Worker can serve per-merchant. No-op unless `PUBLISH_KV_*` is set. |
 | `server/publish/publishPush.ts`                 | `pushPublishedSite(uploadsDir, siteId)` — ships the just-swapped slot to the elected adapter, keyed `sites/<siteId>/<relPath>`. Best-effort, runs after the local swap. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |

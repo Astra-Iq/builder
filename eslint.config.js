@@ -16,7 +16,9 @@ import { fileURLToPath } from 'node:url'
 const configDir = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig([
-  globalIgnores(['dist', '.worktrees', '.claude']),
+  // `deploy/` holds the Cloudflare Worker — deployed via wrangler with its own
+  // toolchain (@cloudflare/workers-types), not part of the app's tsc/eslint.
+  globalIgnores(['dist', '.worktrees', '.claude', 'deploy']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

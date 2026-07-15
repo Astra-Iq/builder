@@ -1,4 +1,5 @@
 import type { S3PublishConfig } from './publish/s3PublishStorage'
+import type { CloudflareKvConfig } from './publish/cloudflareKv'
 
 interface ServerConfig {
   port: number
@@ -17,6 +18,25 @@ interface ServerConfig {
    * `PUBLISH_STORAGE_*` is unset — the push stays a local-disk no-op.
    */
   publishStorage: S3PublishConfig | null
+  /**
+   * Cloudflare KV namespace the publish pipeline syncs `host → siteId` into so
+   * the edge Worker can serve per-merchant. `null` when `PUBLISH_KV_*` is unset.
+   */
+  cloudflareKv: CloudflareKvConfig | null
+}
+
+/**
+ * Read the Cloudflare KV config used to sync the edge host→siteId map. All of
+ * account id / namespace id / API token must be present to enable it.
+ */
+function readCloudflareKv(
+  env: Record<string, string | undefined>,
+): CloudflareKvConfig | null {
+  const accountId = env.PUBLISH_KV_ACCOUNT_ID?.trim()
+  const namespaceId = env.PUBLISH_KV_NAMESPACE_ID?.trim()
+  const apiToken = env.PUBLISH_KV_API_TOKEN?.trim()
+  if (!accountId || !namespaceId || !apiToken) return null
+  return { accountId, namespaceId, apiToken }
 }
 
 /**
@@ -123,5 +143,6 @@ export function readServerConfig(
     publicOrigins: resolvePublicOrigins(env),
     publicBaseDomain: env.PUBLIC_BASE_DOMAIN?.trim().toLowerCase() || null,
     publishStorage: readPublishStorage(env),
+    cloudflareKv: readCloudflareKv(env),
   }
 }

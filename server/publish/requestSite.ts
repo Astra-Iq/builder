@@ -33,6 +33,14 @@ export function configurePublicBaseDomain(domain: string | null): void {
   hostSiteCache.clear()
 }
 
+/**
+ * The configured public base domain, or `null`. Used by the edge host-map sync
+ * (`edgeHostMap.ts`) to derive a site's `<slug>.<PUBLIC_BASE_DOMAIN>` hostname.
+ */
+export function getPublicBaseDomain(): string | null {
+  return publicBaseDomain
+}
+
 // Host → siteId memo. Unknown hosts (bots, the platform apex) cache the default
 // too, so a flood of junk Hosts never hammers the DB.
 const CACHE_TTL_MS = 60_000
