@@ -16,6 +16,8 @@ const { publishStorageRegistry } = await import('./publish/publishStorageRegistr
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
 configurePublicOrigins(config.publicOrigins)
+const { configurePublicBaseDomain } = await import('./publish/requestSite')
+configurePublicBaseDomain(config.publicBaseDomain)
 const { db, migrations } = createDbClient(config.databaseUrl)
 await runMigrations(db, migrations)
 // System role sync runs after migrations on every boot — the Owner row's

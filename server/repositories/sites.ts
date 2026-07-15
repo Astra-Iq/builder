@@ -25,6 +25,7 @@ export interface SiteSummary {
   slug: string
   name: string
   status: string
+  customDomain: string | null
 }
 
 interface SiteRegistryRow {
@@ -33,6 +34,7 @@ interface SiteRegistryRow {
   slug: string
   name: string
   status: string
+  custom_domain: string | null
 }
 
 function rowToSummary(row: SiteRegistryRow): SiteSummary {
@@ -42,6 +44,7 @@ function rowToSummary(row: SiteRegistryRow): SiteSummary {
     slug: row.slug,
     name: row.name,
     status: row.status,
+    customDomain: row.custom_domain ?? null,
   }
 }
 
@@ -55,7 +58,7 @@ function slugifySiteName(name: string): string {
 
 export async function getSiteById(db: DbClient, id: string): Promise<SiteSummary | null> {
   const { rows } = await db<SiteRegistryRow>`
-    select id, logto_org_id, slug, name, status from sites where id = ${id} limit 1
+    select id, logto_org_id, slug, name, status, custom_domain from sites where id = ${id} limit 1
   `
   return rows[0] ? rowToSummary(rows[0]) : null
 }
@@ -65,8 +68,35 @@ export async function getSiteByLogtoOrgId(
   logtoOrgId: string,
 ): Promise<SiteSummary | null> {
   const { rows } = await db<SiteRegistryRow>`
-    select id, logto_org_id, slug, name, status
+    select id, logto_org_id, slug, name, status, custom_domain
     from sites where logto_org_id = ${logtoOrgId} limit 1
+  `
+  return rows[0] ? rowToSummary(rows[0]) : null
+}
+
+/**
+ * Resolve an active site by its slug — the subdomain half of the Host→site
+ * serving resolver (`<slug>.<PUBLIC_BASE_DOMAIN>`). Only `active` sites serve.
+ */
+export async function getSiteBySlug(db: DbClient, slug: string): Promise<SiteSummary | null> {
+  const { rows } = await db<SiteRegistryRow>`
+    select id, logto_org_id, slug, name, status, custom_domain
+    from sites where slug = ${slug} and status = 'active' limit 1
+  `
+  return rows[0] ? rowToSummary(rows[0]) : null
+}
+
+/**
+ * Resolve an active site by its custom domain — the custom-domain half of the
+ * Host→site serving resolver. Only `active` sites serve.
+ */
+export async function getSiteByCustomDomain(
+  db: DbClient,
+  customDomain: string,
+): Promise<SiteSummary | null> {
+  const { rows } = await db<SiteRegistryRow>`
+    select id, logto_org_id, slug, name, status, custom_domain
+    from sites where custom_domain = ${customDomain} and status = 'active' limit 1
   `
   return rows[0] ? rowToSummary(rows[0]) : null
 }
@@ -77,7 +107,7 @@ export async function listSitesForUser(
   userId: string,
 ): Promise<Array<SiteSummary & { roleId: string }>> {
   const { rows } = await db<SiteRegistryRow & { role_id: string }>`
-    select s.id, s.logto_org_id, s.slug, s.name, s.status, m.role_id
+    select s.id, s.logto_org_id, s.slug, s.name, s.status, s.custom_domain, m.role_id
     from site_members m
     join sites s on s.id = m.site_id
     where m.user_id = ${userId}

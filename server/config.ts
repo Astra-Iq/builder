@@ -5,6 +5,11 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  /**
+   * Apex domain merchant subdomains hang off (`<slug>.<PUBLIC_BASE_DOMAIN>`) for
+   * the Host→site serving resolver. `null` disables subdomain matching.
+   */
+  publicBaseDomain: string | null
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -88,5 +93,6 @@ export function readServerConfig(
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
+    publicBaseDomain: env.PUBLIC_BASE_DOMAIN?.trim().toLowerCase() || null,
   }
 }

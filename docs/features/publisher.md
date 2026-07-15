@@ -282,11 +282,12 @@ Published output is baked **per site** (the `site_id` tenant key). Each site own
 an isolated two-slot tree under `uploads/published/<siteId>/{current,a,b}`, so a
 publish, slot swap, or read for one merchant never touches another's. Every
 `staticArtefact.ts` function takes a `siteId` alongside `uploadsDir`; the visitor
-router maps an inbound request to its site through the `resolveSiteForRequest`
-seam (`server/publish/requestSite.ts`) before reading the slot. That seam
-currently resolves every public request to the single default site — a real
-Host / custom-domain → `site_id` lookup slots in there without touching any
-serving handler.
+router maps an inbound request to its site through `resolveSiteForRequest`
+(`server/publish/requestSite.ts`) before reading the slot. That resolver matches
+the request Host against a site's `custom_domain`, then against a
+`<slug>.<PUBLIC_BASE_DOMAIN>` subdomain, and falls back to the default site for
+single-tenant installs and unmatched hosts. It runs on the hot Layer-A path, so a
+60 s per-host memo keeps it from adding a DB hit per request.
 
 A full publish (`publishDraftSite`) bakes **every page** plus all of its assets
 into the publish slot:
@@ -336,12 +337,12 @@ else local disk. The push is **derived, best-effort** state: it runs after the
 site is already live locally, and a failure is logged, never fatal — the local
 slot stays authoritative and the next publish re-ships the whole generation.
 
-**Deferred (not yet wired):** an admin "active publish backend" election
-(mirroring media's persisted `active_media_storage_adapter`); the QuickJS bridge
-that lets a third-party plugin register a publish adapter; a request → site
-resolver for genuinely multi-tenant *serving* (`resolveSiteForRequest` currently
-returns the default site); and a **CDN cache purge** after a successful push
-(the `pushPublishedSite` TODO — fire a purge for the merchant's domain).
+**Deferred (not yet wired):** a **persisted admin election** across *multiple*
+publish backends (mirroring media's `active_media_storage_adapter` — a single
+first-party adapter is elected by env presence today, see below); the QuickJS
+bridge that lets a third-party plugin register a publish adapter; and a **CDN
+cache purge** after a successful push (the `pushPublishedSite` TODO — fire a purge
+for the merchant's domain).
 
 ---
 
@@ -390,7 +391,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
 | `server/publish/staticArtefact.ts`              | Per-site two-slot symlink swap (`swapSlot`) under `published/<siteId>/`, per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), reads (`readArtefact`), and the whole-slot enumerator (`readActiveSlotArtefacts`). Layer A. |
-| `server/publish/requestSite.ts`                 | `resolveSiteForRequest(db, host)` — maps a visitor request to its `site_id` before reading the per-site slot. Returns the default site today; the seam a Host/custom-domain lookup slots into. |
+| `server/publish/requestSite.ts`                 | `resolveSiteForRequest(db, host)` — maps a visitor request to its `site_id` (custom domain → `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain → default) before reading the per-site slot. 60 s per-host memo. |
 | `server/publish/publishStorageRegistry.ts`      | Publish storage adapter registry (sibling of `mediaStorageRegistry`). Built-in local-disk no-op (`''`); plugins register S3/R2 remotes. `resolveActive` picks the elected push target. |
 | `server/publish/publishPush.ts`                 | `pushPublishedSite(uploadsDir, siteId)` — ships the just-swapped slot to the elected adapter, keyed `sites/<siteId>/<relPath>`. Best-effort, runs after the local swap. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |

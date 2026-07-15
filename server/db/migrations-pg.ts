@@ -1203,4 +1203,15 @@ export const pgMigrations: Migration[] = [
       update published_runtime_assets set site_id = 'default' where site_id is null;
     `,
   },
+  {
+    // Custom-domain column for the Host→site serving resolver: a visitor request
+    // on a merchant's own domain resolves to that site's published slot. Nullable
+    // + additive; the partial-unique index mirrors the `sites (slug)` index above.
+    id: '025_sites_custom_domain',
+    sql: `
+      alter table sites add column custom_domain text;
+      create unique index if not exists sites_custom_domain_idx
+        on sites (custom_domain) where custom_domain is not null;
+    `,
+  },
 ]
