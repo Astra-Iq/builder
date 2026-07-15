@@ -95,6 +95,19 @@ SQLite is the default for single-site installs. Postgres is for multiple simulta
 
 SQLite installs also need the SQLite database file on persistent storage. On platforms with only one app volume, put both the SQLite file and uploads under the same mounted root.
 
+## Publishing to object storage (optional)
+
+By default published pages are served off local disk (`UPLOADS_DIR`). To also push each publish to an object store — for CDN/edge serving or per-merchant offload — set `PUBLISH_STORAGE_ENDPOINT`, `PUBLISH_STORAGE_BUCKET`, `PUBLISH_STORAGE_ACCESS_KEY_ID`, and `PUBLISH_STORAGE_SECRET_ACCESS_KEY` (all four required; unset = local disk only). Every publish then uploads its baked files to `sites/<siteId>/…` in the bucket.
+
+Any S3-compatible store works — AWS S3, Cloudflare R2, MinIO, RustFS — because the adapter uses Bun's native S3 client (no SDK). Notes:
+
+- **Endpoint** is the base server URL, path-style (no bucket in it): `http://minio:9000` for MinIO/RustFS, `https://<account>.r2.cloudflarestorage.com` for R2.
+- **`PUBLISH_STORAGE_REGION`** defaults to `auto`; set `us-east-1` for MinIO/RustFS.
+- **Objects upload private.** To serve them, make the bucket/prefix public-readable (e.g. `mc anonymous set download <alias>/<bucket>`) or front it with a credentialed CDN. The app itself does not read pages back out of the bucket — it still serves from local disk; the push is the edge-offload side.
+- Multi-tenant serving from the app is controlled separately by `PUBLIC_BASE_DOMAIN` (merchant subdomains) plus each site's `custom_domain`.
+
+Mechanics: [../features/publisher.md](../features/publisher.md) → "Enabling S3 / R2".
+
 ## Docs Inventory
 
 | File | Role |
