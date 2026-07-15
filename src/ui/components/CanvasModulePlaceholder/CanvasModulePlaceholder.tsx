@@ -30,7 +30,7 @@ import { cn } from '@ui/cn'
 import styles from './CanvasModulePlaceholder.module.css'
 
 interface CanvasModulePlaceholderProps extends HTMLAttributes<HTMLDivElement> {
-  /** Optional pixel-art icon shown above (block) or before (inline) the label. */
+  /** Optional icon shown above (block) or before (inline) the label. */
   icon?: ReactNode
   /** Primary line — short message identifying what's missing. */
   label: ReactNode

@@ -55,6 +55,12 @@ export const CmsAvailableSiteSchema = Type.Object({
   name: Type.String(),
   slug: Type.String(),
   roleId: Type.String(),
+  /**
+   * Canonical public origin the site serves at (`https://<custom-domain>` or
+   * `https://<slug>.<PUBLIC_BASE_DOMAIN>`), or null when per-host serving is
+   * not configured and the site serves on the app's own origin.
+   */
+  liveOrigin: Type.Union([Type.String(), Type.Null()]),
 })
 
 export type CmsAvailableSite = Static<typeof CmsAvailableSiteSchema>

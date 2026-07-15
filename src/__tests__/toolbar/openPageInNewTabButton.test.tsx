@@ -59,11 +59,11 @@ beforeEach(() => {
   // layout — including AdminPageLayout, which never loads the editor
   // store. Tests set the full path directly here to simulate "the
   // canvas is open at <path>".
-  useAdminUi.setState({ activeLivePath: null })
+  useAdminUi.setState({ activeLivePath: null, siteLiveOrigin: null })
 })
 
 afterEach(() => {
-  useAdminUi.setState({ activeLivePath: null })
+  useAdminUi.setState({ activeLivePath: null, siteLiveOrigin: null })
   cleanup()
 })
 
@@ -93,7 +93,11 @@ describe('Toolbar — Open live page icon button', () => {
       const openButton = within(toolbar).getByTestId('toolbar-open-live-page-btn')
       fireEvent.click(openButton)
 
-      expect(openCalls).toEqual([['/pricing', '_blank', 'noopener,noreferrer']])
+      // Without a configured site origin, liveUrl falls back to the admin's
+      // own origin (single-host installs serve the site there).
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/pricing`, '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }
@@ -120,7 +124,9 @@ describe('Toolbar — Open live page icon button', () => {
       const openButton = within(toolbar).getByTestId('toolbar-open-live-page-btn')
       fireEvent.click(openButton)
 
-      expect(openCalls).toEqual([['/', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/`, '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }
@@ -149,7 +155,72 @@ describe('Toolbar — Open live page icon button', () => {
       const toolbar = screen.getByTestId('toolbar')
       fireEvent.click(within(toolbar).getByTestId('toolbar-open-live-page-btn'))
 
-      expect(openCalls).toEqual([['/', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/`, '_blank', 'noopener,noreferrer'],
+      ])
+    } finally {
+      window.open = originalOpen
+    }
+  })
+
+  it('prefixes the site public origin on per-host installs', () => {
+    // `siteLiveOrigin` is the site's public origin from /me
+    // (`https://<slug>.<PUBLIC_BASE_DOMAIN>` or its custom domain). On
+    // per-host installs the admin origin serves only the default site, so
+    // the button must open the absolute URL, not a same-origin path.
+    useAdminUi.setState({
+      activeLivePath: '/pricing',
+      siteLiveOrigin: 'https://store-local.example.com',
+    })
+
+    const originalOpen = window.open
+    const openCalls: unknown[] = []
+    window.open = ((...args: unknown[]) => {
+      openCalls.push(args)
+      return null
+    }) as typeof window.open
+
+    try {
+      render(
+        <Wrapper>
+          <Toolbar />
+        </Wrapper>,
+      )
+
+      const toolbar = screen.getByTestId('toolbar')
+      fireEvent.click(within(toolbar).getByTestId('toolbar-open-live-page-btn'))
+
+      expect(openCalls).toEqual([
+        ['https://store-local.example.com/pricing', '_blank', 'noopener,noreferrer'],
+      ])
+    } finally {
+      window.open = originalOpen
+    }
+  })
+
+  it('opens the origin root when no page is active on a per-host install', () => {
+    useAdminUi.setState({ siteLiveOrigin: 'https://store-local.example.com' })
+
+    const originalOpen = window.open
+    const openCalls: unknown[] = []
+    window.open = ((...args: unknown[]) => {
+      openCalls.push(args)
+      return null
+    }) as typeof window.open
+
+    try {
+      render(
+        <Wrapper>
+          <Toolbar />
+        </Wrapper>,
+      )
+
+      const toolbar = screen.getByTestId('toolbar')
+      fireEvent.click(within(toolbar).getByTestId('toolbar-open-live-page-btn'))
+
+      expect(openCalls).toEqual([
+        ['https://store-local.example.com/', '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }
@@ -178,7 +249,9 @@ describe('Toolbar — Open live page icon button', () => {
       const toolbar = screen.getByTestId('toolbar')
       fireEvent.click(within(toolbar).getByTestId('toolbar-open-live-page-btn'))
 
-      expect(openCalls).toEqual([['/blog/getting-started', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/blog/getting-started`, '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }

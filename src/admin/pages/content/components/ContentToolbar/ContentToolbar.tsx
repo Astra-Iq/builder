@@ -14,6 +14,7 @@ import {
   type PublishActionStatusTone,
 } from '@site/toolbar/PublishActionGroup'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
+import { liveUrl } from '@admin/state/adminUi'
 import type { SaveMessage } from '@content/hooks/useContentEntryDraft'
 
 interface ContentToolbarProps {
@@ -203,7 +204,7 @@ export function ContentToolbar({
       disabled: !publicPath,
       onSelect: () => {
         if (!publicPath) return
-        window.open(publicPath, '_blank', 'noopener,noreferrer')
+        window.open(liveUrl(publicPath), '_blank', 'noopener,noreferrer')
       },
       testId: 'toolbar-content-open-entry-action',
     },

@@ -30,6 +30,7 @@ import { ensureSiteForOrg, listSitesForUser } from '../../repositories/sites'
 import { getSiteMemberRoleId, upsertSiteMember } from '../../repositories/siteMembers'
 import { createAuditEvent } from '../../repositories/audit'
 import { publicOriginIsHttps } from '../../auth/security'
+import { siteLiveOrigin } from '../../publish/requestSite'
 import {
   buildAuthorizeUrl,
   buildEndSessionUrl,
@@ -237,6 +238,7 @@ async function handleMe(req: Request, db: DbClient): Promise<Response> {
     name: site.name,
     slug: site.slug,
     roleId: site.roleId,
+    liveOrigin: siteLiveOrigin(site),
   }))
   const currentSite = user.currentSiteId
     ? availableSites.find((site) => site.id === user.currentSiteId) ?? null

@@ -878,7 +878,9 @@ describe('SiteExplorerPanel', () => {
       })
       fireEvent.click(screen.getByRole('menuitem', { name: /open in new tab/i }))
 
-      expect(openCalls).toEqual([['/pricing', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/pricing`, '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }

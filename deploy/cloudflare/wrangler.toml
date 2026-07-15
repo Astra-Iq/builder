@@ -11,9 +11,7 @@ compatibility_date = "2024-11-01"
 # Route every merchant subdomain (and any custom hostnames added to the zone)
 # through the Worker. Replace shopzoon.app with your PUBLIC_BASE_DOMAIN zone.
 # Custom domains are added as Cloudflare-for-SaaS custom hostnames on this zone.
-routes = [
-  { pattern = "*.shopzoon.app/*", zone_name = "shopzoon.app" },
-]
+routes = [{ pattern = "*.shopzoon.app/*", zone_name = "shopzoon.app" }]
 
 # R2 bucket the app publishes into (PUBLISH_STORAGE_BUCKET).
 [[r2_buckets]]
@@ -24,4 +22,4 @@ bucket_name = "published-sites"
 # Create it with:  wrangler kv namespace create SITE_MAP
 [[kv_namespaces]]
 binding = "SITE_MAP"
-id = "<PUBLISH_KV_NAMESPACE_ID>"
+id = "159278d40994493594b9a92d54a89257"

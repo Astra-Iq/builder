@@ -7,6 +7,7 @@ import {
   type CmsPublicSite,
   type CmsAvailableSite,
 } from '@core/persistence/auth'
+import { useAdminUi } from '@admin/state/adminUi'
 
 /**
  * The admin app authenticates through Logto (the builder is the OIDC client).
@@ -89,6 +90,10 @@ export function useAdminBoot(): AdminBootResult {
       try {
         const session = await getCurrentCmsSession()
         if (cancelled) return
+        // The current site's public origin feeds the "Open live page" button on
+        // every admin route; a site switch reloads the page, so this single
+        // boot-time write keeps adminUi in step with the session.
+        useAdminUi.getState().setSiteLiveOrigin(session.currentSite?.liveOrigin ?? null)
         // flushSync — force the initial boot commit synchronous so the resolved
         // screen paints on the frame /me settles rather than waiting on the
         // concurrent scheduler. Only this first commit is forced.

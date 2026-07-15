@@ -1494,7 +1494,9 @@ describe('ContentPage', () => {
       const menu = screen.getByRole('menu', { name: /publishing actions/i })
       fireEvent.click(within(menu).getByRole('menuitem', { name: /open live post/i }))
 
-      expect(openCalls).toEqual([['/posts/untitled', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/posts/untitled`, '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }

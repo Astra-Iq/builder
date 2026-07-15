@@ -9,8 +9,7 @@
  * regenerated, the VM would silently run stale code.
  *
  * This gate re-bundles the source in memory and asserts the committed
- * artifacts match byte-for-byte, exactly as `vendor-icons-fresh.test.ts` gates
- * the vendored icon set. Run `bun run bootstrap:sync` to refresh.
+ * artifacts match byte-for-byte. Run `bun run bootstrap:sync` to refresh.
  */
 import { describe, it, expect } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'

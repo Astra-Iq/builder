@@ -9,6 +9,7 @@ import {
   __resetRequestSiteCache,
   configurePublicBaseDomain,
   resolveSiteForRequest,
+  siteLiveOrigin,
 } from '../requestSite'
 
 describe('resolveSiteForRequest', () => {
@@ -72,5 +73,30 @@ describe('resolveSiteForRequest', () => {
     __resetRequestSiteCache()
     expect(await resolveSiteForRequest(db, 'shop-a.com')).toBe('site-a')
     expect(await resolveSiteForRequest(db, 'alpha.shopzoon.app')).toBe('default')
+  })
+})
+
+describe('siteLiveOrigin', () => {
+  afterEach(() => {
+    configurePublicBaseDomain(null)
+  })
+
+  it('prefers the custom domain, lowercased', () => {
+    configurePublicBaseDomain('shopzoon.app')
+    expect(siteLiveOrigin({ slug: 'alpha', customDomain: 'Shop-A.com' })).toBe(
+      'https://shop-a.com',
+    )
+  })
+
+  it('derives <slug>.<base> when no custom domain is set', () => {
+    configurePublicBaseDomain('shopzoon.app')
+    expect(siteLiveOrigin({ slug: 'beta', customDomain: null })).toBe(
+      'https://beta.shopzoon.app',
+    )
+  })
+
+  it('returns null when per-host serving is not configured', () => {
+    configurePublicBaseDomain(null)
+    expect(siteLiveOrigin({ slug: 'beta', customDomain: null })).toBeNull()
   })
 })

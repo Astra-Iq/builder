@@ -41,6 +41,22 @@ export function getPublicBaseDomain(): string | null {
   return publicBaseDomain
 }
 
+/**
+ * The canonical public origin a site serves at — the inverse of the Host→site
+ * resolution below, with the same precedence: the custom domain when set, else
+ * `<slug>.<PUBLIC_BASE_DOMAIN>` when a base domain is configured. `null` means
+ * per-host serving is not configured and the site is reachable only as the
+ * default site on the app's own origin (single-tenant installs).
+ *
+ * Per-host serving always terminates TLS at a proxy (the edge Worker or a
+ * reverse proxy), so the scheme is https unconditionally.
+ */
+export function siteLiveOrigin(site: { slug: string; customDomain: string | null }): string | null {
+  if (site.customDomain) return `https://${site.customDomain.toLowerCase()}`
+  if (publicBaseDomain) return `https://${site.slug}.${publicBaseDomain}`
+  return null
+}
+
 // Host → siteId memo. Unknown hosts (bots, the platform apex) cache the default
 // too, so a flood of junk Hosts never hammers the DB.
 const CACHE_TTL_MS = 60_000

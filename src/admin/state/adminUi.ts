@@ -89,6 +89,16 @@ interface AdminUiState {
    */
   activeLivePath: string | null
   setActiveLivePath: (path: string | null) => void
+
+  /**
+   * Canonical public origin of the current site (`https://<custom-domain>` or
+   * `https://<slug>.<PUBLIC_BASE_DOMAIN>`), or `null` when per-host serving is
+   * not configured — then the site serves on the app's own origin. Written once
+   * by `useAdminBoot` from the `/me` session (a site switch reloads the page,
+   * so boot is the only writer). Consumed through `liveUrl()` below.
+   */
+  siteLiveOrigin: string | null
+  setSiteLiveOrigin: (origin: string | null) => void
 }
 
 /**
@@ -151,4 +161,22 @@ export const useAdminUi = create<AdminUiState>((set) => ({
 
   activeLivePath: null,
   setActiveLivePath: (path) => set({ activeLivePath: path }),
+
+  siteLiveOrigin: null,
+  setSiteLiveOrigin: (origin) => set({ siteLiveOrigin: origin }),
 }))
+
+/**
+ * Absolute live URL for a public path (`/about`, `/blog/getting-started`).
+ * Prefixes `siteLiveOrigin` when per-host serving is configured; otherwise the
+ * admin's own origin, which serves the site on single-host installs. On
+ * per-host installs the admin origin serves only the default site, so opening
+ * or copying a bare relative path would target the wrong site — every
+ * open-live / copy-URL surface must build its URL through this helper.
+ *
+ * Reads the store imperatively: callers are click handlers, which want the
+ * value at click time, not a render subscription.
+ */
+export function liveUrl(path: string): string {
+  return `${useAdminUi.getState().siteLiveOrigin ?? window.location.origin}${path}`
+}

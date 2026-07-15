@@ -27,6 +27,7 @@ import {
 } from '@content/components/ContentItemRenameDialog/ContentItemRenameDialog'
 import styles from '../../ContentPage.module.css'
 import { publicContentPath } from '@content/utils/contentEntryUtils'
+import { liveUrl } from '@admin/state/adminUi'
 
 type ContentExplorerContextTarget =
   | { kind: 'collection'; collection: DataTable }
@@ -157,7 +158,7 @@ export function ContentExplorerPanel({
   async function copyEntryUrl(entry: DataRow) {
     const collection = collectionForEntry(entry)
     if (!collection) return
-    const url = `${window.location.origin}${publicContentPath(collection.routeBase, entry.slug)}`
+    const url = liveUrl(publicContentPath(collection.routeBase, entry.slug))
     try {
       await navigator.clipboard.writeText(url)
     } catch (err) {
@@ -218,7 +219,7 @@ export function ContentExplorerPanel({
         action: () => {
           const collection = collectionForEntry(target.entry)
           if (collection) {
-            window.open(publicContentPath(collection.routeBase, target.entry.slug), '_blank', 'noopener,noreferrer')
+            window.open(liveUrl(publicContentPath(collection.routeBase, target.entry.slug)), '_blank', 'noopener,noreferrer')
           }
           setContextMenu(null)
         },

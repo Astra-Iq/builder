@@ -27,14 +27,18 @@
  * in its lazy editor body (which also resolves the template-preview
  * target). Non-editor layouts never write the field, so it naturally
  * stays `null` outside an editing surface.
+ *
+ * The path is resolved to an absolute URL through `liveUrl()` — the site's
+ * public origin (`https://<slug>.<PUBLIC_BASE_DOMAIN>` or its custom domain,
+ * from `/me` via `useAdminBoot`) when per-host serving is configured, the
+ * admin's own origin otherwise.
  */
 import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
-import { useAdminUi } from '@admin/state/adminUi'
+import { liveUrl, useAdminUi } from '@admin/state/adminUi'
 
 export function OpenLivePageButton() {
   const activeLivePath = useAdminUi((s) => s.activeLivePath)
-  const target = activeLivePath ?? '/'
   const tooltip = activeLivePath ? 'Open live page' : 'Open live site'
 
   return (
@@ -46,7 +50,7 @@ export function OpenLivePageButton() {
       tooltip={tooltip}
       data-testid="toolbar-open-live-page-btn"
       onClick={() => {
-        window.open(target, '_blank', 'noopener,noreferrer')
+        window.open(liveUrl(activeLivePath ?? '/'), '_blank', 'noopener,noreferrer')
       }}
     >
       <ExternalLinkSolidIcon size={16} aria-hidden="true" />
