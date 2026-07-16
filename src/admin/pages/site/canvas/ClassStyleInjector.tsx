@@ -40,6 +40,7 @@
 
 import { useEffect } from 'react'
 import { useEditorStore } from '@site/store/store'
+import { buildGoogleFontsHref } from '@core/fonts'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
 import { collectBackgroundImagePaths, collectSiteStyleBackgroundImagePaths } from '@core/publisher'
 import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
@@ -70,6 +71,7 @@ interface ClassStyleInjectorProps {
 const STYLE_TAG_ID = 'mc-classes'
 const PREVIEW_STYLE_TAG_ID = 'mc-classes-preview'
 const FORCE_STATE_STYLE_TAG_ID = 'mc-classes-force-state'
+const GOOGLE_FONTS_LINK_ID = 'mc-google-fonts'
 
 /**
  * Stable empty array used as the ?? fallback for breakpoints selector.
@@ -162,6 +164,30 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     responsiveMediaAssets,
     responsiveMediaSignature,
   ])
+
+  // Google fonts load from the CSS2 CDN via a <link> (not self-hosted
+  // @font-face), so the canvas iframe gets the same <link> the published page
+  // does — otherwise google families would fall back to system-ui in the
+  // preview. Custom fonts stay in the class CSS above as @font-face rules.
+  const googleFontsHref = buildGoogleFontsHref(fonts)
+  useEffect(() => {
+    const targetDoc = targetDocument ?? document
+    let linkEl = targetDoc.getElementById(GOOGLE_FONTS_LINK_ID) as HTMLLinkElement | null
+    if (!googleFontsHref) {
+      linkEl?.remove()
+      return
+    }
+    if (!linkEl) {
+      linkEl = targetDoc.createElement('link')
+      linkEl.id = GOOGLE_FONTS_LINK_ID
+      linkEl.rel = 'stylesheet'
+      linkEl.setAttribute('data-source', 'ClassStyleInjector:google-fonts')
+      targetDoc.head.appendChild(linkEl)
+    }
+    if (linkEl.getAttribute('href') !== googleFontsHref) {
+      linkEl.setAttribute('href', googleFontsHref)
+    }
+  }, [targetDocument, googleFontsHref])
 
   // Preview overlay — a higher-specificity rule emitted while a user is
   // hovering a suggestion in a property control (e.g. spacing token
@@ -258,6 +284,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       targetDoc.getElementById(STYLE_TAG_ID)?.remove()
       targetDoc.getElementById(PREVIEW_STYLE_TAG_ID)?.remove()
       targetDoc.getElementById(FORCE_STATE_STYLE_TAG_ID)?.remove()
+      targetDoc.getElementById(GOOGLE_FONTS_LINK_ID)?.remove()
     }
   }, [targetDocument])
 

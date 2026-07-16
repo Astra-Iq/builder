@@ -54,9 +54,13 @@ export function AdminRoutes() {
       <Route path="/" element={<Navigate to="/admin/site" replace />} />
       <Route path="/admin" element={<Navigate to="/admin/site" replace />} />
       <Route path="/admin/site" element={withRouteBoundary(<AdminEntry section="site" />)} />
-      <Route path="/admin/content" element={withRouteBoundary(<AdminEntry section="content" />)} />
-      <Route path="/admin/data" element={withRouteBoundary(<AdminEntry section="data" />)} />
-      <Route path="/admin/media" element={withRouteBoundary(<AdminEntry section="media" />)} />
+      {/* Content / Data / Media workspaces are hidden from the merchant editor.
+          Their routes redirect to the site editor so a stale/typed link can't
+          reach a hidden workspace. The underlying section components and engine
+          are untouched — same approach as the Plugins hide below. */}
+      <Route path="/admin/content" element={<Navigate to="/admin/site" replace />} />
+      <Route path="/admin/data" element={<Navigate to="/admin/site" replace />} />
+      <Route path="/admin/media" element={<Navigate to="/admin/site" replace />} />
       {/* Plugins workspace is hidden — the marketplace rebuild lands later.
           Both plugin routes redirect to the editor so a stale/typed link
           can't reach the dormant workspace. The plugin ENGINE (editor rail

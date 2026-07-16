@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useEditorStore } from '@site/store/store'
-import { checkSizeLimit } from '@core/files/upload'
+import { checkSizeLimit } from '@core/files/uploadLimits'
 import {
   deleteCmsMediaAsset,
   listCmsMediaAssets,

@@ -154,19 +154,30 @@ afterEach(() => {
 })
 
 describe('capability-aware admin UI', () => {
-  it('hides admin sections that the current user cannot access', () => {
+  it('surfaces only the Site workspace — Content / Data / Media are hidden', () => {
     render(
       <MemoryRouter initialEntries={['/admin/content']}>
-        <AdminSessionProvider user={currentUser(['content.create', 'content.edit.own', 'content.publish.own'])}>
+        <AdminSessionProvider
+          user={currentUser([
+            'site.read',
+            'content.create',
+            'content.edit.own',
+            'data.system.tables.read',
+            'media.read',
+          ])}
+        >
           <AdminSectionNavigation section="content" />
         </AdminSessionProvider>
       </MemoryRouter>,
     )
 
-    expect(screen.getByText('Content')).toBeDefined()
-    expect(screen.queryByRole('link', { name: 'Site' })).toBeNull()
+    // Only Site is exposed in the nav. Even though this user holds content /
+    // data / media capabilities, those workspaces are hidden from the editor.
+    expect(screen.getByRole('link', { name: 'Site' })).toBeDefined()
+    expect(screen.queryByText('Content')).toBeNull()
+    expect(screen.queryByText('Data')).toBeNull()
+    expect(screen.queryByText('Media')).toBeNull()
     expect(screen.queryByRole('link', { name: 'Plugins' })).toBeNull()
-    expect(screen.queryByRole('link', { name: 'Users' })).toBeNull()
   })
 
   it('removes collection management and author reassignment for own-content editors', async () => {

@@ -14,7 +14,7 @@
  * drain in the corner.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { checkSizeLimit } from '@core/files/upload'
+import { checkSizeLimit } from '@core/files/uploadLimits'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import {
   setCmsMediaAssetFolders,

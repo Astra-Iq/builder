@@ -388,7 +388,7 @@ The publisher emits `<head>` in this order:
 9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
 
-Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
+Installed fonts split by source. **Custom** (media-library) fonts are emitted through the CSS bundle as self-hosted `@font-face` rules for `site.settings.fonts.items` (`src` under `/uploads/media/…`). **Google** fonts are loaded from the Google Fonts CSS2 CDN via `<link>` tags injected into `<head>` (`buildGoogleFontsLinkTags` in `@core/fonts`: a `preconnect` pair + one combined `fonts.googleapis.com/css2?family=…&display=swap` stylesheet) — they carry no on-disk files, so an edge / object-storage deployment needs no font binaries in its bucket. When any Google font is present, the page CSP opens `style-src` to `https://fonts.googleapis.com` and adds `font-src 'self' https://fonts.gstatic.com` (`createBaseCspPlan({ hasGoogleFonts })`); pages without Google fonts keep the tight policy. Either way the font CSS still emits `:root` declarations for editable tokens such as `--font-primary`, so a page rule can keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
 
 Plugins inject at four anchors. The order matters — see [docs/features/plugin-system.md](plugin-system.md) for the splicing rules.
 

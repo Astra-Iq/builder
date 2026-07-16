@@ -27,11 +27,12 @@ import { generateClassCSS } from './classCss'
 
 export function buildSiteFrameworkCss(site: SiteDocument): string {
   const { fonts } = site.settings
-  // Fonts emit @font-face rules + --font-<slug> tokens. Emit first so any
-  // rule that references a font family resolves against an already-declared
-  // face. All `src` URLs are restricted to /uploads/fonts/ upstream — no CDN
-  // linkage in the published page (Constraint: published HTML never reaches
-  // Google).
+  // Fonts emit @font-face rules + --font-<slug> tokens. Emit first so any rule
+  // that references a font family resolves against an already-declared face.
+  // Only self-hosted CUSTOM fonts produce @font-face here (media-backed, under
+  // /uploads/media/). Google fonts carry no on-disk files — they load from the
+  // CSS2 CDN via `<link>` tags injected into the head by the publisher
+  // (`buildGoogleFontsLinkTags`), so they never appear in this CSS.
   const fontsCss = generateFontsCss(fonts)
   const frameworkCss = generateFrameworkCss(site)
   return [fontsCss, frameworkCss]

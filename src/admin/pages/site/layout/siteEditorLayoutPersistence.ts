@@ -42,7 +42,9 @@ function explorerTab(
   value: unknown,
   current: ExplorerPanelTab,
 ): ExplorerPanelTab {
-  return value === 'layers' || value === 'site' || value === 'code' || value === 'media'
+  // A previously-persisted 'media' tab is no longer valid (the Media tab is
+  // hidden); it falls through to `current` (the default 'layers').
+  return value === 'layers' || value === 'site' || value === 'code'
     ? value
     : current
 }

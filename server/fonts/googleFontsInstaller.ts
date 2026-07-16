@@ -1,31 +1,29 @@
 /**
- * googleFontsInstaller — server-side installer for Google Fonts.
+ * googleFontsInstaller — server-side resolver + size estimator for Google Fonts.
  *
  * Workflow:
  *   1. The editor sends `{ family, variants[], subsets[] }` to the install endpoint.
- *   2. We hit the public Google Fonts CSS2 endpoint per (variant, subset) pair to
- *      retrieve a single `@font-face` rule that points at a CDN-hosted woff2 URL.
- *      We never give that URL to the browser — it stays server-side only.
- *   3. We download each woff2, write it to `<uploads>/fonts/<slug>/...woff2`.
- *   4. We return a `FontEntry` ready for the client to merge into `site.settings.fonts`.
+ *   2. We validate the selection against the bundled Google Fonts directory
+ *      snapshot (families + their advertised variants/subsets).
+ *   3. We return a `FontEntry` (`source: 'google'`, no on-disk files) ready for
+ *      the client to merge into `site.settings.fonts`.
  *
- * The hit Google Fonts surface (`https://fonts.googleapis.com/css2?...`) is the
- * keyless one — it doesn't require an API key, only a UA hint that supports
- * woff2 (we send a modern Chrome UA). The font binaries live at
- * `https://fonts.gstatic.com/s/...` and are CC/OFL licensed for redistribution.
+ * Google fonts are NOT self-hosted: the published page and canvas load them from
+ * the CSS2 CDN (`fonts.googleapis.com`) via `<link>` tags, so no woff2 files are
+ * downloaded or written to disk. This keeps published sites free of font
+ * binaries that would otherwise have to be pushed into an object-storage bucket.
  *
- * This module does network + file IO only — it never touches the database, so
+ * The size estimator (`estimateGoogleFont`) still hits the keyless CSS2 endpoint
+ * (`https://fonts.googleapis.com/css2?...`, UA-gated to woff2) and HEADs each
+ * gstatic woff2 URL to report the transfer size in the picker — read-only, no
+ * writes. This module does network IO only — it never touches the database, so
  * it lives under `server/fonts/`, not in the `server/repositories/` data layer.
  */
 
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { nanoid } from 'nanoid'
 import type { FontEntry, FontFile, FontFileFormat } from '@core/fonts'
-import { familySlug } from '@core/fonts'
 import { compareVariants, parseVariant, variantsToCss2Axis } from '@core/fonts'
 import { findGoogleFont } from '@core/fonts'
-import { mapWithConcurrency } from '../util/mapWithConcurrency'
 
 /**
  * UA spoof: Google's CSS2 endpoint inspects the User-Agent header to decide which
@@ -265,14 +263,6 @@ export function computePrimarySubset(familySubsets: readonly string[], css: stri
   return familySubsets.find((s) => !named.has(s)) ?? ''
 }
 
-async function downloadBinary(url: string): Promise<Uint8Array> {
-  const res = await fetch(url, { headers: { 'User-Agent': WOFF2_UA } })
-  if (!res.ok) {
-    throw new FontInstallError(`Failed to download font binary (HTTP ${res.status})`)
-  }
-  return new Uint8Array(await res.arrayBuffer())
-}
-
 /**
  * In-process cache for woff2 byte sizes keyed by gstatic URL. The dialog calls
  * `estimateGoogleFont` repeatedly as the user toggles variants/subsets — caching
@@ -368,96 +358,20 @@ export async function estimateGoogleFont(
 }
 
 /**
- * Per-slice filename inside the family directory:
- *   `<weight><i?>-<subset>-<sliceIndex>.woff2`
- *   → e.g. `400-latin-0.woff2`, `400-latin-1.woff2`, `700italic-latin-ext-0.woff2`.
+ * Resolve a Google font install request into a `FontEntry` for the client to
+ * merge into `site.settings.fonts`.
  *
- * Google's CSS2 endpoint returns multiple `@font-face` blocks per
- * (variant × subset) request, each pinned to a different `unicode-range`
- * slice — they all need their own file or they'd collide on disk. The slice
- * index matches the order Google emits them, so re-installing the same
- * selection produces deterministic filenames.
+ * No download, no disk IO: the entry records the family + validated
+ * variants/subsets/category, and carries NO on-disk files (`files: []`). The
+ * published page and canvas load the font from the CSS2 CDN via `<link>` tags
+ * built from these fields (`buildGoogleFontsLinkTags` / `buildGoogleFontsHref`
+ * in `@core/fonts`), so there's nothing to self-host.
  *
- * Subset is restricted to the bundled directory's allow-list before this
- * function runs, so it's already a known token (latin, latin-ext, etc.) — but
- * we still strip anything outside `[a-z0-9-]` defensively in case Google adds
- * a future subset name we don't know about.
+ * Validation still fails closed against the bundled directory: only families we
+ * ship, and only their advertised variants/subsets, are accepted.
  */
-function fontSliceFilename(variant: string, subset: string, sliceIndex: number): string {
-  const safeSubset = subset.toLowerCase().replace(/[^a-z0-9-]/g, '')
-  return `${variant}-${safeSubset || 'latin'}-${sliceIndex}.woff2`
-}
-
-/**
- * Cap on concurrent woff2 downloads during install. CJK families (Noto Sans
- * KR, JP, SC, TC) emit 100+ shards per variant; without bounded concurrency a
- * 5-variant Korean install would either serialize for minutes or open 600+
- * sockets at once. 8 in flight saturates a typical residential link without
- * tripping gstatic's per-host limits.
- */
-const INSTALL_CONCURRENCY = 8
-
-export async function installGoogleFont(
-  input: InstallGoogleFontInput,
-  uploadsDir: string,
-): Promise<FontEntry> {
-  const { resolved, faces } = await resolveFaces(input)
-  const slug = familySlug(resolved.family)
-  if (!slug) throw new FontInstallError('Family name has no usable slug')
-
-  const targetDir = join(uploadsDir, 'fonts', slug)
-  // Wipe any previous install for this family so stale slices from an older
-  // selection / older Google revision don't linger on disk. Re-install is the
-  // only path that touches this directory, so a clean slate is the right
-  // invariant.
-  await rm(targetDir, { recursive: true, force: true })
-  await mkdir(targetDir, { recursive: true })
-
-  // Pre-compute the FontFile metadata sequentially so slice indexes within a
-  // (variant, subset) pair stay deterministic regardless of which downloads
-  // win the parallel race below.
-  interface PlannedFile {
-    file: FontFile
-    sourceUrl: string
-    onDiskPath: string
-  }
-  const plan: PlannedFile[] = []
-  const sliceCounters = new Map<string, number>()
-  for (const face of faces) {
-    const variant = face.italic ? `${face.weight}italic` : String(face.weight)
-    const counterKey = `${variant}::${face.subset}`
-    const sliceIndex = sliceCounters.get(counterKey) ?? 0
-    sliceCounters.set(counterKey, sliceIndex + 1)
-    const filename = fontSliceFilename(variant, face.subset, sliceIndex)
-    plan.push({
-      sourceUrl: face.url,
-      onDiskPath: join(targetDir, filename),
-      file: {
-        variant,
-        subset: face.subset,
-        path: `/uploads/fonts/${slug}/${filename}`,
-        format: 'woff2',
-        ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
-      },
-    })
-  }
-
-  // Download + write in bounded parallel; one slow URL no longer blocks the
-  // others. A failing download bubbles a `FontInstallError` and the partially
-  // populated directory is wiped at the end.
-  await mapWithConcurrency(plan, INSTALL_CONCURRENCY, async (entry) => {
-    const bytes = await downloadBinary(entry.sourceUrl)
-    await writeFile(entry.onDiskPath, bytes)
-  })
-
-  const files = plan.map((p) => p.file)
-
-  if (files.length === 0) {
-    // Cleanup: empty directory is meaningless on disk.
-    await rm(targetDir, { recursive: true, force: true })
-    throw new FontInstallError(`Google Fonts returned no woff2 files for ${resolved.family}`)
-  }
-
+export function installGoogleFont(input: InstallGoogleFontInput): FontEntry {
+  const resolved = resolveGoogleRequest(input)
   const now = Date.now()
   return {
     id: nanoid(),
@@ -465,25 +379,11 @@ export async function installGoogleFont(
     family: resolved.family,
     variants: resolved.variants,
     subsets: resolved.subsets,
-    files,
+    files: [],
     category: resolved.category,
     createdAt: now,
     updatedAt: now,
   }
-}
-
-/**
- * Remove every woff2 file for a family slug from disk. Called by the delete
- * endpoint after the client has dropped the entry from `site.settings.fonts`.
- * Idempotent — missing directory is not an error.
- */
-export async function uninstallFontFamily(
-  family: string,
-  uploadsDir: string,
-): Promise<void> {
-  const slug = familySlug(family)
-  if (!slug) return
-  await rm(join(uploadsDir, 'fonts', slug), { recursive: true, force: true })
 }
 
 // ---------------------------------------------------------------------------

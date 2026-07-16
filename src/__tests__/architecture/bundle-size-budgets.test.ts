@@ -157,10 +157,13 @@ const BUDGETS: ChunkBudget[] = [
 
   {
     prefix: 'ContentPage-',
-    maxBytes: 90_000,
+    maxBytes: 115_000,
     rationale:
-      'content workspace route after Tiptap/LiveCanvas lazy split. Current ' +
-      '~81 KB raw / ~27 KB gzipped.',
+      'content workspace route after Tiptap/LiveCanvas lazy split. Now inlines ' +
+      'MediaExplorerPanel (~19 KB raw): the site editor no longer shares that ' +
+      'component (its Explorer Media tab is hidden), so it is no longer hoisted ' +
+      'into a shared chunk. Net app bundle is unchanged — the bytes just moved ' +
+      'from a shared chunk into this route. Current ~107 KB raw / ~37 KB gzipped.',
   },
 
   {

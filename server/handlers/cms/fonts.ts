@@ -3,9 +3,16 @@
  *
  *   GET    /admin/api/cms/fonts/google           — bundled Google Fonts directory (no CDN hit)
  *   POST   /admin/api/cms/fonts/estimate         — sum woff2 `Content-Length` for a selection
- *   POST   /admin/api/cms/fonts/install          — download woff2 files, return a FontEntry
+ *   POST   /admin/api/cms/fonts/install          — validate a selection, return a FontEntry
  *   POST   /admin/api/cms/fonts/custom           — assemble a FontEntry from uploaded media fonts
- *   DELETE /admin/api/cms/fonts/family/:family   — remove on-disk font files for a family
+ *
+ * Google fonts are not self-hosted — `/fonts/install` validates the selection
+ * against the bundled directory and returns a `FontEntry` (no on-disk files);
+ * the published page and canvas load the font from the CSS2 CDN via `<link>`
+ * tags. There is no delete endpoint: removing a font is a metadata-only edit
+ * (the client drops the entry from `site.settings.fonts`) — Google fonts have
+ * no files to clean up, and custom fonts reference shared media assets managed
+ * independently in the media library.
  *
  * Custom fonts upload their binaries through the media route (`POST
  * /admin/api/cms/media`, `role: 'original'`, font MIMEs already accepted). The
@@ -15,10 +22,9 @@
  * magic-byte sniff + server-chosen extension are reused verbatim.
  *
  * The fonts library itself lives inside `site.settings.fonts`, so this REST
- * surface is intentionally narrow: install + uninstall perform on-disk
- * work; the metadata is persisted with the rest of the site settings via
- * `PUT /admin/api/cms/site`. All endpoints are gated by `site.style.edit`
- * — fonts are typography / visual setup, not content edits.
+ * surface is intentionally narrow: the metadata is persisted with the rest of
+ * the site settings via `PUT /admin/api/cms/site`. All endpoints are gated by
+ * `site.style.edit` — fonts are typography / visual setup, not content edits.
  */
 import type { DbClient } from '../../db/client'
 import { requireCapability } from '../../auth/authz'
@@ -28,7 +34,6 @@ import {
   fontFormatForMime,
   FontInstallError,
   installGoogleFont,
-  uninstallFontFamily,
   type ResolvedCustomFontFile,
 } from '../../fonts/googleFontsInstaller'
 import { getMediaAsset } from '../../repositories/media'
@@ -37,7 +42,7 @@ import { parseVariant } from '@core/fonts'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
-import { runRouteTable, type Route, type RouteParams } from './routeTable'
+import { runRouteTable, type Route } from './routeTable'
 
 const GoogleFontSelectionBodySchema = Type.Object({
   family: Type.String(),
@@ -147,49 +152,20 @@ async function handleCustomFont(req: Request, db: DbClient): Promise<Response> {
   }
 }
 
-async function handleInstallFont(
-  req: Request,
-  db: DbClient,
-  _params: RouteParams,
-  options: CmsHandlerOptions,
-): Promise<Response> {
+async function handleInstallFont(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'site.style.edit')
   if (user instanceof Response) return user
-  if (!options.uploadsDir) {
-    return jsonResponse({ error: 'Uploads directory is not configured' }, { status: 500 })
-  }
 
   const selection = await readGoogleFontSelectionBody(req)
   if (selection instanceof Response) return selection
 
   try {
-    const entry = await installGoogleFont(selection, options.uploadsDir)
+    const entry = installGoogleFont(selection)
     return jsonResponse({ font: entry }, { status: 201 })
   } catch (err) {
     if (err instanceof FontInstallError) return badRequest(err.message)
     console.error('[fonts:install]', err)
     return jsonResponse({ error: 'Font install failed' }, { status: 500 })
-  }
-}
-
-async function handleDeleteFontFamily(
-  req: Request,
-  db: DbClient,
-  params: RouteParams,
-  options: CmsHandlerOptions,
-): Promise<Response> {
-  const user = await requireCapability(req, db, 'site.style.edit')
-  if (user instanceof Response) return user
-  if (!options.uploadsDir) {
-    return jsonResponse({ error: 'Uploads directory is not configured' }, { status: 500 })
-  }
-
-  try {
-    await uninstallFontFamily(params.family, options.uploadsDir)
-    return jsonResponse({ ok: true })
-  } catch (err) {
-    console.error('[fonts:uninstall]', err)
-    return jsonResponse({ error: 'Font uninstall failed' }, { status: 500 })
   }
 }
 
@@ -202,11 +178,6 @@ const FONTS_ROUTES: readonly Route<[CmsHandlerOptions]>[] = [
   { method: 'POST', pattern: `${CMS_API_PREFIX}/fonts/estimate`, handler: handleEstimateFont },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/fonts/custom`, handler: handleCustomFont },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/fonts/install`, handler: handleInstallFont },
-  {
-    method: 'DELETE',
-    pattern: new RegExp(`^${CMS_API_PREFIX}/fonts/family/(?<family>[^/]+)$`),
-    handler: handleDeleteFontFamily,
-  },
 ]
 
 export async function handleFontsRoutes(

@@ -149,7 +149,6 @@ const CMS_MUTATION_ROUTES: MutationRoute[] = [
   { method: 'POST', path: '/admin/api/cms/fonts/estimate' },
   { method: 'POST', path: '/admin/api/cms/fonts/install' },
   { method: 'POST', path: '/admin/api/cms/fonts/custom' },
-  { method: 'DELETE', path: '/admin/api/cms/fonts/family/Inter' },
   { method: 'POST', path: '/admin/api/cms/publish' },
   { method: 'POST', path: '/admin/api/cms/export' },
   { method: 'POST', path: '/admin/api/cms/export/estimate' },
