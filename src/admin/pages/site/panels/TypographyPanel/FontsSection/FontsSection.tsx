@@ -2,10 +2,11 @@
  * FontsSection — site fonts library shown at the top of the Typography panel.
  *
  * Lists every font installed on the site and lets the user add another from
- * Google's directory (custom uploads are a planned next step). All file work
- * happens on the server: this component only mutates `site.settings.fonts`
- * via the `addFont` / `removeFont` zustand actions and triggers the install /
- * uninstall HTTP endpoints.
+ * Google's directory or a custom upload. This component mutates
+ * `site.settings.fonts` via the `addFont` / `removeFont` zustand actions; the
+ * install endpoint validates a Google selection (which then loads from the CSS2
+ * CDN — nothing is downloaded) and the custom endpoint resolves uploaded media
+ * assets. Removing a font is a metadata-only edit — no server call.
  *
  * The section embeds into `FrameworkScalePanel` via the `extraSections` slot;
  * see `TypographyPanel.tsx` for the wiring.
@@ -26,7 +27,6 @@ import {
   resolveFontTokenStack,
   sortFontTokens,
 } from '@core/fonts'
-import { deleteCmsFontFamily } from '@core/persistence/cmsFonts'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
@@ -35,7 +35,6 @@ import { AddGoogleFontDialog } from './AddGoogleFontDialog'
 import { AddCustomFontDialog } from './AddCustomFontDialog'
 import { FontTokenDialog } from './FontTokenDialog'
 import styles from './FontsSection.module.css'
-import { getErrorMessage } from '@core/utils/errorMessage'
 
 const EMPTY_FONTS: FontEntry[] = []
 const EMPTY_TOKENS: FontToken[] = []
@@ -88,10 +87,11 @@ export function FontsSection() {
     ensureTokenForFont(committed)
   }
 
-  async function handleRemove(entry: FontEntry) {
-    // Optimistically drop the entry from the library — the on-disk woff2 files
-    // are best-effort to delete; a stale folder is harmless and gets pruned on
-    // the next install of the same family.
+  function handleRemove(entry: FontEntry) {
+    // Removing a font is a metadata-only edit — drop the entry from the library
+    // and persist. Google fonts have no self-hosted files (they load from the
+    // CSS2 CDN) and custom fonts reference shared media assets managed in the
+    // media library, so there's nothing to clean up server-side.
     const removed = removeFont(entry.id)
     if (!removed) {
       pushToast({
@@ -99,19 +99,6 @@ export function FontsSection() {
         title: 'Font still in use',
         body: 'Reassign or delete the font tokens that reference this family before removing it.',
       })
-      return
-    }
-    if (entry.source === 'google') {
-      try {
-        await deleteCmsFontFamily(entry.family)
-      } catch (err) {
-        console.error('[FontsSection] delete font files failed:', err)
-        pushToast({
-          kind: 'error',
-          title: 'Could not delete font files',
-          body: getErrorMessage(err, 'Unknown font deletion error'),
-        })
-      }
     }
   }
 

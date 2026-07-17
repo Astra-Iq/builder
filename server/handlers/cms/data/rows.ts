@@ -211,6 +211,8 @@ async function handleRowItemDelete(
   const rowId = params.id
   const user = await requireDataEditor(req, db)
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const currentRow = await loadRowForAccess(db, rowId, user, canEditDataRow)
   if (currentRow instanceof Response) return currentRow
@@ -220,7 +222,7 @@ async function handleRowItemDelete(
   // Prune the baked public artefact — a deleted row must stop being served
   // by Layer A, which reads the disk slot with no DB awareness (ISS-039).
   if (options.uploadsDir) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await removeDataRowArtefact(db, options.uploadsDir, siteId, rowId, row.slug).catch((err) => {
       console.error('[publish:row] failed to remove artefact for deleted row', rowId, err)
     })
   }
@@ -241,11 +243,13 @@ async function handleRowPublish(
   const rowId = params.id
   const user = await requireDataPublisher(req, db)
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const currentRow = await loadRowForAccess(db, rowId, user, canPublishDataRow)
   if (currentRow instanceof Response) return currentRow
 
-  const result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
+  const result = await publishDataRow(db, siteId, rowId, user.id, options.uploadsDir)
   await emitContentEntryUpdated(db, rowId, ['status'], { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.publish', result.row, {
     versionNumber: result.version.versionNumber,
@@ -321,6 +325,8 @@ async function handleRowStatus(
   const rowId = params.id
   const user = await requireDataEditor(req, db)
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const body = await readValidatedBody(req, RowStatusBodySchema)
   if (!body) return badRequest('Status must be draft or unpublished')
@@ -333,7 +339,7 @@ async function handleRowStatus(
   // draft and unpublished both leave public visibility — prune the baked
   // artefact so Layer A stops serving the retracted content (ISS-039).
   if (options.uploadsDir) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await removeDataRowArtefact(db, options.uploadsDir, siteId, rowId, row.slug).catch((err) => {
       console.error('[publish:row] failed to remove artefact for retracted row', rowId, err)
     })
   }

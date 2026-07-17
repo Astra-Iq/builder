@@ -278,6 +278,17 @@ Four bundles per page (each hashed independently): `reset`, `framework`,
 
 ### Static publishing — everything baked to disk
 
+Published output is baked **per site** (the `site_id` tenant key). Each site owns
+an isolated two-slot tree under `uploads/published/<siteId>/{current,a,b}`, so a
+publish, slot swap, or read for one merchant never touches another's. Every
+`staticArtefact.ts` function takes a `siteId` alongside `uploadsDir`; the visitor
+router maps an inbound request to its site through `resolveSiteForRequest`
+(`server/publish/requestSite.ts`) before reading the slot. That resolver matches
+the request Host against a site's `custom_domain`, then against a
+`<slug>.<PUBLIC_BASE_DOMAIN>` subdomain, and falls back to the default site for
+single-tenant installs and unmatched hosts. It runs on the hot Layer-A path, so a
+60 s per-host memo keeps it from adding a DB hit per request.
+
 A full publish (`publishDraftSite`) bakes **every page** plus all of its assets
 into the publish slot:
 
@@ -307,6 +318,59 @@ The exclusive namespaces `/_instatic/css/*` (`serveSiteCss`) and `/_instatic/ass
 publish whose disk write failed. Unknown paths under either prefix 404 rather
 than falling through.
 
+### Publish push — shipping the baked generation to object storage
+
+For a per-merchant CDN deployment the baked bytes also need to reach an object
+store. After the local slot swap and `bumpPublishVersion()`, `publishDraftSite`
+calls `pushPublishedSite(uploadsDir, siteId)` (`server/publish/publishPush.ts`),
+which reads the just-swapped active slot (`readActiveSlotArtefacts`) and pushes
+every file to the **elected publish storage adapter** under a per-site key,
+`sites/<siteId>/<relPath>`.
+
+Adapters live in `publishStorageRegistry` — the sibling of the media storage
+registry. The built-in local-disk adapter (reserved id `''`) is a **no-op push**
+(the bytes already live on local disk), so the default single-host install pays
+only one registry lookup. `resolveActive` returns the first-registered remote,
+else local disk. The push is **derived, best-effort** state: it runs after the
+site is already live locally, and a failure is logged, never fatal — the local
+slot stays authoritative and the next publish re-ships the whole generation.
+
+**Enabling S3 / R2.** Set `PUBLISH_STORAGE_ENDPOINT`, `PUBLISH_STORAGE_BUCKET`,
+`PUBLISH_STORAGE_ACCESS_KEY_ID`, and `PUBLISH_STORAGE_SECRET_ACCESS_KEY` (plus an
+optional `PUBLISH_STORAGE_REGION`, default `auto`). At boot `server/index.ts`
+registers the first-party S3/R2 adapter (`server/publish/s3PublishStorage.ts`,
+built on Bun's native `Bun.S3Client` — no SDK), and every publish then pushes to
+the bucket under `sites/<siteId>/<relPath>`. R2 works by pointing the endpoint at
+`https://<account>.r2.cloudflarestorage.com`. Election is by env presence: with
+the vars unset nothing is registered and the push stays a local no-op. Plugins
+can also register their own `PublishStorageAdapter` (`putObject` / `deleteObject`
+by key) once the registration bridge lands.
+
+### Serving from the edge (Cloudflare Worker + KV)
+
+Pushing to R2 is the write side; serving those objects per merchant at the edge is
+a Cloudflare Worker (`deploy/cloudflare/`). The bucket is keyed by the immutable
+`siteId`, but a visitor request carries only a hostname, so the Worker needs a
+`host → siteId` map. The app keeps that map in Cloudflare KV: when `PUBLISH_KV_*`
+is set, boot wires a KV client (`server/publish/cloudflareKv.ts`) and every publish
+calls `syncSiteHostMappings` (`server/publish/edgeHostMap.ts`), which upserts the
+site's `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain and its `custom_domain` → `siteId`.
+Best-effort and no-op when unconfigured, exactly like the object push.
+
+The Worker then resolves `host → siteId` via KV, maps the URL path to the baked
+object key (the same `/`→`index.html` / `.html` rules as `staticArtefact.ts`),
+serves it from R2 with the stored Content-Type, and falls back to `404.html`. See
+`deploy/cloudflare/README.md` for DNS, Cloudflare-for-SaaS custom-domain certs, and
+deploy steps. Removing stale KV entries on slug change / suspend, and an admin
+setter for `custom_domain`, are follow-ups (the sync fires on publish today).
+
+**Deferred (not yet wired):** a **persisted admin election** across *multiple*
+publish backends (mirroring media's `active_media_storage_adapter` — a single
+first-party adapter is elected by env presence today, see below); the QuickJS
+bridge that lets a third-party plugin register a publish adapter; and a **CDN
+cache purge** after a successful push (the `pushPublishedSite` TODO — fire a purge
+for the merchant's domain).
+
 ---
 
 ## `<head>` assembly
@@ -324,7 +388,7 @@ The publisher emits `<head>` in this order:
 9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
 
-Installed fonts are emitted through the CSS bundle, not external `<link>` tags. The font CSS includes self-hosted `@font-face` rules for `site.settings.fonts.items` plus `:root` declarations for editable tokens such as `--font-primary`. A page rule can therefore keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
+Installed fonts split by source. **Custom** (media-library) fonts are emitted through the CSS bundle as self-hosted `@font-face` rules for `site.settings.fonts.items` (`src` under `/uploads/media/…`). **Google** fonts are loaded from the Google Fonts CSS2 CDN via `<link>` tags injected into `<head>` (`buildGoogleFontsLinkTags` in `@core/fonts`: a `preconnect` pair + one combined `fonts.googleapis.com/css2?family=…&display=swap` stylesheet) — they carry no on-disk files, so an edge / object-storage deployment needs no font binaries in its bucket. When any Google font is present, the page CSP opens `style-src` to `https://fonts.googleapis.com` and adds `font-src 'self' https://fonts.gstatic.com` (`createBaseCspPlan({ hasGoogleFonts })`); pages without Google fonts keep the tight policy. Either way the font CSS still emits `:root` declarations for editable tokens such as `--font-primary`, so a page rule can keep `font-family: var(--font-primary)` while the token assignment changes site-wide.
 
 Plugins inject at four anchors. The order matters — see [docs/features/plugin-system.md](plugin-system.md) for the splicing rules.
 
@@ -353,7 +417,12 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | File                                            | Role                                                                |
 |-------------------------------------------------|---------------------------------------------------------------------|
 | `server/publish/publicRouter.ts`                | Gateway: Layer A disk fast-path → Layer B LRU → live `resolvePublicRoute` + `renderPublicResolution`. |
-| `server/publish/staticArtefact.ts`              | Two-slot symlink swap (`swapSlot`), per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), and reads (`readArtefact`). Layer A. |
+| `server/publish/staticArtefact.ts`              | Per-site two-slot symlink swap (`swapSlot`) under `published/<siteId>/`, per-file atomic writes (`writeArtefact`, `updateArtefactInPlace`), reads (`readArtefact`), and the whole-slot enumerator (`readActiveSlotArtefacts`). Layer A. |
+| `server/publish/requestSite.ts`                 | `resolveSiteForRequest(db, host)` — maps a visitor request to its `site_id` (custom domain → `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain → default) before reading the per-site slot. 60 s per-host memo. Also exports `siteLiveOrigin(site)` — the inverse mapping (site → canonical public origin) the `/me` payload carries for the admin's "Open live page" button. |
+| `server/publish/publishStorageRegistry.ts`      | Publish storage adapter registry (sibling of `mediaStorageRegistry`). Built-in local-disk no-op (`''`); remotes register here. `resolveActive` picks the elected push target. |
+| `server/publish/s3PublishStorage.ts`            | First-party S3/R2 `PublishStorageAdapter` on Bun's native `Bun.S3Client` (no SDK). Registered at boot when `PUBLISH_STORAGE_*` is set; injectable client for tests. |
+| `server/publish/cloudflareKv.ts` / `edgeHostMap.ts` | Edge host-map sync: CF KV REST client + `syncSiteHostMappings` upserting `host → siteId` (subdomain + custom domain) on publish so the `deploy/cloudflare/` Worker can serve per-merchant. No-op unless `PUBLISH_KV_*` is set. |
+| `server/publish/publishPush.ts`                 | `pushPublishedSite(uploadsDir, siteId)` — ships the just-swapped slot to the elected adapter, keyed `sites/<siteId>/<relPath>`. Best-effort, runs after the local swap. |
 | `server/publish/renderCache.ts`                 | In-memory LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. `getOrRender` (single-flight). Reads the version from `publishState`; version captured at render start — a publish landing mid-render discards the result rather than caching stale HTML. Layer B. |
 | `server/publish/publishState.ts`                | Publish-time process state: `publishVersion` (`bumpPublishVersion`/`getPublishVersion`), `withPublishLock` (ISS-038 publish serializer), and `createVersionedSingleFlight` — the generalized version-keyed single-flight memo the hole endpoint reuses. Repositories import the version + lock from here (not from the cache). |
 | `server/publish/holeRuntime.ts`                 | Exports `runInstaticHoleRuntime` (the TypeScript source of the Layer C runtime) and `HOLE_RUNTIME_JS` (IIFE-serialized string, ~1.1 KB, served to browsers). Tests call `runInstaticHoleRuntime()` directly to avoid dynamic eval. |
@@ -441,8 +510,8 @@ publishDraftSite (server/publish/publishSite.ts)
     │      version-keyed memo in siteCssBundle.ts; userStyles per page)
     │         (atomic per-file: tmp + rename; per-page try/catch)
     │
-    ├─→ swapSlot(uploadsDir, newActiveSlot)
-    │     uploads/published/current → flips atomically (rename of a symlink
+    ├─→ swapSlot(uploadsDir, siteId, newActiveSlot)
+    │     uploads/published/<siteId>/current → flips atomically (rename of a symlink
     │     is a single-inode swap; in-flight readers keep fds into the OLD
     │     slot until they close)
     │
@@ -496,7 +565,7 @@ tryServePublicRoute (server/router.ts)
 ```
 
 The visitor-facing artefacts are:
-1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
+1. **Disk files in the active slot** (`uploads/published/<siteId>/current/<route>.html`) — for fully-static routes. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish.
 2. **In-memory LRU entries** — for dynamic routes (loops, request-dependent bindings). Filled lazily, evicted on every publish.
 3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
 

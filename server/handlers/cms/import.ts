@@ -105,6 +105,8 @@ export async function handleImportRoute(
   // Base gate — any import requires `data.import`.
   const user = await requireCapability(req, db, 'data.import')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   // Parse strategy from query string (default: replace)
   const strategyParam = url.searchParams.get('strategy') ?? 'replace'
@@ -166,10 +168,13 @@ export async function handleImportRoute(
   if (strategy === 'replace') {
     // Wipe-and-replace: delete all rows + custom tables, then reimport.
     await db.transaction(async (tx) => {
-      // 1. Delete ALL data rows (covers all tables)
-      await tx`delete from data_rows`
+      // 1. Delete THIS SITE's data rows (covers all tables). Scoped to the
+      //    tenant — a replace import must never wipe another site's content.
+      await tx`delete from data_rows where site_id = ${siteId}`
 
-      // 2. Delete all non-system data tables
+      // 2. Delete all non-system data tables. (Custom data_tables are not yet
+      //    per-site — see the /data phase; today they are shared, so a replace
+      //    import still clears the shared custom-table set.)
       await tx`delete from data_tables where system = 0 or system = false`
 
       // 3. Load remaining system tables so we know which bundle tables to
@@ -214,6 +219,7 @@ export async function handleImportRoute(
       for (const row of bundle.rows) {
         const input: DataRowImportInput = {
           id: row.id,
+          siteId,
           tableId: row.tableId,
           cells: row.cells,
           slug: row.slug,
@@ -228,16 +234,16 @@ export async function handleImportRoute(
 
       // 6. Replace the site shell (only when the bundle carries one)
       if (bundle.site) {
-        await saveDraftSite(tx, bundle.site)
+        await saveDraftSite(tx, siteId, bundle.site)
       }
 
       // 7. Media folder tree. `delete from data_rows` above does NOT touch
       //    media_folders (unrelated FK), so wipe explicitly, then insert
       //    parent-first to satisfy the self-referencing parent_id FK.
       if (bundle.mediaFolders) {
-        await deleteAllMediaFolders(tx)
+        await deleteAllMediaFolders(tx, siteId)
         for (const folder of orderFoldersParentFirst(bundle.mediaFolders)) {
-          await importMediaFolder(tx, folder)
+          await importMediaFolder(tx, siteId, folder)
           importedFolderIds.add(folder.id)
           mediaFoldersImported++
         }
@@ -277,6 +283,7 @@ export async function handleImportRoute(
       for (const row of bundle.rows) {
         const input: DataRowImportInput = {
           id: row.id,
+          siteId,
           tableId: row.tableId,
           cells: row.cells,
           slug: row.slug,
@@ -303,7 +310,7 @@ export async function handleImportRoute(
       // we can classify each row as inserted vs replaced without per-row SELECTs.
       const existingRowIds = new Set<string>()
       for (const table of bundle.tables) {
-        const existing = await listDataRows(tx, table.id)
+        const existing = await listDataRows(tx, siteId, table.id)
         for (const r of existing) existingRowIds.add(r.id)
       }
 
@@ -338,6 +345,7 @@ export async function handleImportRoute(
       for (const row of bundle.rows) {
         const input: DataRowImportInput = {
           id: row.id,
+          siteId,
           tableId: row.tableId,
           cells: row.cells,
           slug: row.slug,
@@ -356,7 +364,7 @@ export async function handleImportRoute(
 
       // Site shell: overwrite if the bundle carries one
       if (bundle.site) {
-        await saveDraftSite(tx, bundle.site)
+        await saveDraftSite(tx, siteId, bundle.site)
       }
     })
   }
@@ -387,6 +395,7 @@ export async function handleImportRoute(
 
         // Upsert the media_assets row
         await importMediaAsset(db, {
+          siteId,
           id: asset.id,
           filename: asset.filename,
           mimeType: asset.mimeType,
@@ -409,7 +418,7 @@ export async function handleImportRoute(
         // imported, so a stale folderId can't violate the membership FK.
         const targetFolders = asset.folderIds.filter((id) => importedFolderIds.has(id))
         if (targetFolders.length > 0) {
-          await assignAssetToFolders(db, asset.id, { add: targetFolders })
+          await assignAssetToFolders(db, siteId, asset.id, { add: targetFolders })
         }
 
         mediaImported++

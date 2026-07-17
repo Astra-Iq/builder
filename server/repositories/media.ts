@@ -13,11 +13,21 @@ import type { MediaAsset, MediaVariant } from './mediaTypes'
 // can be shared verbatim with the publisher's render-time prefetch without
 // duplication. This module owns the asset domain types (`MediaAsset`,
 // `MediaVariant`) and every CRUD query.
+//
+// Every query is tenant-scoped by `site_id`: media is per-site content, so the
+// caller threads its resolved `siteId` (from the session's current site) into
+// each function. Enumerating reads filter by it, inserts stamp it, and even the
+// by-id reads/writes carry `and site_id = ?` — the ids come straight from
+// client requests, so a bare `where id = ?` would let one tenant reach
+// another's asset by guessing its id. Isolation is gated by
+// `site-id-tenant-isolation.test.ts`.
 
 export type { MediaAsset, MediaVariant } from './mediaTypes'
 
 interface CreateMediaAssetInput {
   id: string
+  /** The tenant that owns this asset. Media is scoped per site. */
+  siteId: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -45,7 +55,8 @@ interface DeletedMediaAssetRow {
 /**
  * Hydrate the asset → folder-id map for a batch of assets. One round trip,
  * grouped by asset id. Used by every list / get path so the caller sees the
- * full multi-folder membership without an N+1.
+ * full multi-folder membership without an N+1. The asset ids are already
+ * site-scoped by the callers, so the membership join rides that scope.
  */
 async function loadFolderIdsForAssets(
   db: DbClient,
@@ -94,6 +105,7 @@ export async function createMediaAsset(
   // cannot desync.
   const valuesByColumn: Record<(typeof MEDIA_ASSET_INSERT_COLUMNS)[number], unknown> = {
     id: input.id,
+    site_id: input.siteId,
     filename: input.filename,
     mime_type: input.mimeType,
     size_bytes: input.sizeBytes,
@@ -116,13 +128,14 @@ export async function createMediaAsset(
 
 export async function getMediaAsset(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<MediaAsset | null> {
   const { rows } = await db.unsafe<MediaAssetRow>(
     `select ${MEDIA_ASSET_COLUMNS}
      from media_assets
-     where id = ${placeholder(db.dialect, 1)}`,
-    [id],
+     where id = ${placeholder(db.dialect, 1)} and site_id = ${placeholder(db.dialect, 2)}`,
+    [id, siteId],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
@@ -130,47 +143,52 @@ export async function getMediaAsset(
 }
 
 /**
- * List every media asset (active or in-trash, never both). The repo intentionally
- * returns the full set and lets the handler apply additional filters (folder /
- * type / search / tag / sort / pagination) in JS — cross-dialect dynamic SQL
- * with optional WHERE clauses is fragile and the media library is small enough
- * (low thousands per site) that the round-trip dominates. If a site grows past
- * the comfort zone we'll move filters server-side per-dialect; not premature
- * optimization for M2.
+ * List every media asset for a site (active or in-trash, never both). The repo
+ * intentionally returns the full set and lets the handler apply additional
+ * filters (folder / type / search / tag / sort / pagination) in JS —
+ * cross-dialect dynamic SQL with optional WHERE clauses is fragile and the media
+ * library is small enough (low thousands per site) that the round-trip
+ * dominates. If a site grows past the comfort zone we'll move filters
+ * server-side per-dialect; not premature optimization for M2.
  */
 export async function listMediaAssets(
   db: DbClient,
+  siteId: string,
   options: { includeDeleted?: boolean } = {},
 ): Promise<MediaAsset[]> {
   // Two queries, not one, because cross-dialect optional WHERE clauses in
   // tagged templates require literal SQL text — `includeDeleted` is the
   // only branch.
+  const p = (n: number) => placeholder(db.dialect, n)
   const { rows } = options.includeDeleted
     ? await db.unsafe<MediaAssetRow>(
         `select ${MEDIA_ASSET_COLUMNS}
          from media_assets
-         where deleted_at is not null
+         where site_id = ${p(1)} and deleted_at is not null
          order by deleted_at desc`,
+        [siteId],
       )
     : await db.unsafe<MediaAssetRow>(
         `select ${MEDIA_ASSET_COLUMNS}
          from media_assets
-         where deleted_at is null
+         where site_id = ${p(1)} and deleted_at is null
          order by created_at desc`,
+        [siteId],
       )
   return hydrateAssets(db, rows)
 }
 
 export async function renameMediaAsset(
   db: DbClient,
+  siteId: string,
   id: string,
   filename: string,
 ): Promise<MediaAsset | null> {
   const { rows } = await db.unsafe<MediaAssetRow>(
     `update media_assets set filename = ${placeholder(db.dialect, 1)}
-     where id = ${placeholder(db.dialect, 2)}
+     where id = ${placeholder(db.dialect, 2)} and site_id = ${placeholder(db.dialect, 3)}
      returning ${MEDIA_ASSET_COLUMNS}`,
-    [filename, id],
+    [filename, id, siteId],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
@@ -184,6 +202,7 @@ export async function renameMediaAsset(
  */
 export async function updateMediaAssetMetadata(
   db: DbClient,
+  siteId: string,
   id: string,
   input: UpdateMediaAssetMetadataInput,
 ): Promise<MediaAsset | null> {
@@ -207,9 +226,9 @@ export async function updateMediaAssetMetadata(
        caption = coalesce(${p(3)}, caption),
        title = coalesce(${p(4)}, title),
        tags_json = coalesce(${p(5)}, tags_json)
-     where id = ${p(6)}
+     where id = ${p(6)} and site_id = ${p(7)}
      returning ${MEDIA_ASSET_COLUMNS}`,
-    [filename, altText, caption, title, tags, id],
+    [filename, altText, caption, title, tags, id, siteId],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
@@ -230,6 +249,7 @@ export async function updateMediaAssetMetadata(
  */
 export async function setMediaAssetVariants(
   db: DbClient,
+  siteId: string,
   id: string,
   input: {
     width: number | null
@@ -245,9 +265,9 @@ export async function setMediaAssetVariants(
        height = ${p(2)},
        blur_hash = ${p(3)},
        variants_json = ${p(4)}
-     where id = ${p(5)}
+     where id = ${p(5)} and site_id = ${p(6)}
      returning ${MEDIA_ASSET_COLUMNS}`,
-    [input.width, input.height, input.blurHash, input.variants, id],
+    [input.width, input.height, input.blurHash, input.variants, id, siteId],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
@@ -260,29 +280,33 @@ export async function setMediaAssetVariants(
  */
 export async function softDeleteMediaAsset(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<MediaAsset | null> {
   const nowIso = new Date().toISOString()
+  const p = (n: number) => placeholder(db.dialect, n)
   const { rows } = await db.unsafe<MediaAssetRow>(
-    `update media_assets set deleted_at = ${placeholder(db.dialect, 1)}
-     where id = ${placeholder(db.dialect, 2)} and deleted_at is null
+    `update media_assets set deleted_at = ${p(1)}
+     where id = ${p(2)} and site_id = ${p(3)} and deleted_at is null
      returning ${MEDIA_ASSET_COLUMNS}`,
-    [nowIso, id],
+    [nowIso, id, siteId],
   )
-  if (rows.length === 0) return getMediaAsset(db, id)
+  if (rows.length === 0) return getMediaAsset(db, siteId, id)
   const assets = await hydrateAssets(db, rows)
   return assets[0] ?? null
 }
 
 export async function restoreMediaAsset(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<MediaAsset | null> {
+  const p = (n: number) => placeholder(db.dialect, n)
   const { rows } = await db.unsafe<MediaAssetRow>(
     `update media_assets set deleted_at = null
-     where id = ${placeholder(db.dialect, 1)}
+     where id = ${p(1)} and site_id = ${p(2)}
      returning ${MEDIA_ASSET_COLUMNS}`,
-    [id],
+    [id, siteId],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
@@ -295,11 +319,12 @@ export async function restoreMediaAsset(
  */
 export async function deleteMediaAsset(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<{ storagePath: string } | null> {
   const { rows } = await db<DeletedMediaAssetRow>`
     delete from media_assets
-    where id = ${id}
+    where id = ${id} and site_id = ${siteId}
     returning storage_path
   `
   const row = rows[0]
@@ -319,6 +344,7 @@ export async function deleteMediaAsset(
  */
 export async function replaceMediaAssetBinary(
   db: DbClient,
+  siteId: string,
   id: string,
   input: {
     filename: string
@@ -342,7 +368,7 @@ export async function replaceMediaAssetBinary(
        storage_adapter_id = ${p(6)},
        externally_hosted = ${p(7)},
        replaced_at = ${p(8)}
-     where id = ${p(9)}
+     where id = ${p(9)} and site_id = ${p(10)}
      returning ${MEDIA_ASSET_COLUMNS}`,
     [
       input.filename,
@@ -354,6 +380,7 @@ export async function replaceMediaAssetBinary(
       input.externallyHosted,
       nowIso,
       id,
+      siteId,
     ],
   )
   if (rows.length === 0) return null
@@ -368,10 +395,11 @@ export async function replaceMediaAssetBinary(
  */
 export async function getMediaAssetStoragePath(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<string | null> {
   const { rows } = await db<{ storage_path: string }>`
-    select storage_path from media_assets where id = ${id}
+    select storage_path from media_assets where id = ${id} and site_id = ${siteId}
   `
   return rows[0]?.storage_path ?? null
 }
@@ -384,10 +412,11 @@ export async function getMediaAssetStoragePath(
  */
 export async function getMediaAssetVariants(
   db: DbClient,
+  siteId: string,
   id: string,
 ): Promise<MediaVariant[]> {
   const { rows } = await db<{ variants_json: unknown }>`
-    select variants_json from media_assets where id = ${id}
+    select variants_json from media_assets where id = ${id} and site_id = ${siteId}
   `
   if (rows.length === 0) return []
   return parseVariants(rows[0].variants_json)
@@ -396,10 +425,13 @@ export async function getMediaAssetVariants(
 /**
  * Add and/or remove an asset's folder memberships in one transactional step.
  * Idempotent: re-adding an existing membership is a no-op (relies on the
- * primary key + an INSERT … ON CONFLICT DO NOTHING).
+ * primary key + an INSERT … ON CONFLICT DO NOTHING). The asset is re-read
+ * scoped to the site, so a membership change against a foreign asset resolves
+ * to null.
  */
 export async function assignAssetToFolders(
   db: DbClient,
+  siteId: string,
   assetId: string,
   input: { add?: string[]; remove?: string[] },
 ): Promise<MediaAsset | null> {
@@ -419,7 +451,7 @@ export async function assignAssetToFolders(
         on conflict do nothing
       `
     }
-    return getMediaAsset(tx, assetId)
+    return getMediaAsset(tx, siteId, assetId)
   })
 }
 
@@ -438,19 +470,23 @@ interface MediaAssetExportRow extends MediaAssetRow {
  * because the public read paths never need to expose it.
  */
 /** Count of non-deleted media assets available to export (no row hydration). */
-export async function countMediaAssetsForExport(db: DbClient): Promise<number> {
+export async function countMediaAssetsForExport(db: DbClient, siteId: string): Promise<number> {
   const { rows } = await db<{ n: number | string }>`
-    select count(*) as n from media_assets where deleted_at is null
+    select count(*) as n from media_assets where site_id = ${siteId} and deleted_at is null
   `
   return Number(rows[0]?.n ?? 0)
 }
 
-export async function listMediaAssetsForExport(db: DbClient): Promise<Array<MediaAsset & { storagePath: string }>> {
+export async function listMediaAssetsForExport(
+  db: DbClient,
+  siteId: string,
+): Promise<Array<MediaAsset & { storagePath: string }>> {
   const { rows } = await db.unsafe<MediaAssetExportRow>(
     `select ${MEDIA_ASSET_COLUMNS}, storage_path
      from media_assets
-     where deleted_at is null
+     where site_id = ${placeholder(db.dialect, 1)} and deleted_at is null
      order by created_at asc`,
+    [siteId],
   )
   const folderMap = await loadFolderIdsForAssets(db, rows.map((r) => r.id))
   return rows.map((row) => ({
@@ -461,6 +497,8 @@ export async function listMediaAssetsForExport(db: DbClient): Promise<Array<Medi
 
 interface ImportMediaAssetInput {
   id: string
+  /** The tenant that owns the imported asset. */
+  siteId: string
   filename: string
   mimeType: string
   sizeBytes: number
@@ -502,13 +540,13 @@ export async function importMediaAsset(
   const externallyHosted = input.externallyHosted ?? false
   await db`
     insert into media_assets (
-      id, filename, mime_type, size_bytes, storage_path, public_path,
+      id, site_id, filename, mime_type, size_bytes, storage_path, public_path,
       alt_text, caption, title, tags_json, width, height, duration_ms,
       dominant_color, blur_hash, poster_path,
       storage_adapter_id, externally_hosted
     )
     values (
-      ${input.id}, ${input.filename}, ${input.mimeType}, ${input.sizeBytes},
+      ${input.id}, ${input.siteId}, ${input.filename}, ${input.mimeType}, ${input.sizeBytes},
       ${input.storagePath}, ${input.publicPath},
       ${input.altText}, ${input.caption}, ${input.title}, ${tags},
       ${input.width}, ${input.height}, ${input.durationMs},

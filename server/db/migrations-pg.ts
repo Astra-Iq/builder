@@ -1085,4 +1085,133 @@ export const pgMigrations: Migration[] = [
       drop index if exists users_single_active_owner_idx;
     `,
   },
+  {
+    // Multi-tenant foundation (P1): one Logto Organization = one site.
+    //
+    // The singleton `site` table becomes the multi-row `sites` registry; every
+    // tenant-scoped table gains a nullable `site_id`. System `data_tables`
+    // definitions (pages/posts/components/layouts) stay GLOBAL (site_id NULL,
+    // shared by all sites) so their fixed primary keys never collide across
+    // tenants; only content (`data_rows`) and user-created custom tables are
+    // per-site.
+    //
+    // Content `site_id` is left NULL here — the adopted install is backfilled to
+    // 'default' AND the repository writes/queries are rewired to thread siteId in
+    // the same later phase, so the two stay consistent. Until then every row sits
+    // in the coalesce('') partition and the new tenant-scoped unique indexes
+    // reduce to the exact pre-migration keys (strictly non-breaking).
+    //
+    // `site_id` is nullable and FK-less here to stay additive and non-destructive
+    // across both dialects; not-null is enforced at the app boundary + the
+    // isolation architecture test, and a future migration may tighten it.
+    id: '022_multi_tenant_sites',
+    sql: `
+      alter table site rename to sites;
+      alter table sites add column logto_org_id text;
+      alter table sites add column slug text;
+      alter table sites add column status text not null default 'active';
+      update sites set slug = 'default' where slug is null;
+      create unique index if not exists sites_logto_org_id_idx
+        on sites (logto_org_id) where logto_org_id is not null;
+      create unique index if not exists sites_slug_idx
+        on sites (slug) where slug is not null;
+
+      -- site_id on every tenant-scoped table (content, media, plugins, ai).
+      -- Columns only — no backfill (see the note above).
+      alter table data_tables add column site_id text;
+      alter table data_rows add column site_id text;
+      alter table data_row_versions add column site_id text;
+      alter table data_row_redirects add column site_id text;
+      alter table site_snapshots add column site_id text;
+      alter table published_runtime_assets add column site_id text;
+      alter table media_assets add column site_id text;
+      alter table media_folders add column site_id text;
+      alter table media_asset_folders add column site_id text;
+      alter table media_smart_folders add column site_id text;
+      alter table media_usage_refs add column site_id text;
+      alter table installed_plugins add column site_id text;
+      alter table plugin_records add column site_id text;
+      alter table plugin_crash_events add column site_id text;
+      alter table plugin_schedules add column site_id text;
+      alter table plugin_schedule_runs add column site_id text;
+      alter table plugin_secrets add column site_id text;
+      alter table ai_conversations add column site_id text;
+      alter table ai_messages add column site_id text;
+      alter table ai_mcp_connectors add column site_id text;
+      alter table ai_defaults add column site_id text;
+      alter table audit_events add column site_id text;
+
+      -- Tenant-scoped unique indexes replace the install-global ones. System
+      -- table slugs (site_id NULL) collapse into the coalesce('') partition and
+      -- stay globally unique; per-site rows are unique within their own site.
+      drop index if exists data_tables_slug_active_idx;
+      create unique index if not exists data_tables_site_slug_active_idx
+        on data_tables (coalesce(site_id, ''), slug) where deleted_at is null;
+      drop index if exists data_rows_table_slug_active_idx;
+      create unique index if not exists data_rows_site_table_slug_active_idx
+        on data_rows (coalesce(site_id, ''), table_id, slug)
+        where deleted_at is null and slug <> '';
+      -- data_row_redirects_source_idx is left as-is: it is the target of an
+      -- "on conflict (from_route_base, from_slug)" upsert, so it is reshaped to
+      -- include site_id in the same later phase that rewires that upsert.
+      drop index if exists media_folders_parent_slug_idx;
+      create unique index if not exists media_folders_site_parent_slug_idx
+        on media_folders (coalesce(site_id, ''), coalesce(parent_id, ''), slug);
+
+      -- (user, site) -> role association, re-synced from Logto org membership at
+      -- login. Backfills every current user as a member of the adopted site.
+      create table if not exists site_members (
+        site_id text not null,
+        user_id text not null references users(id) on delete cascade,
+        role_id text not null references roles(id) on delete restrict,
+        source text not null default 'logto',
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now(),
+        primary key (site_id, user_id)
+      );
+      create index if not exists site_members_user_idx on site_members (user_id);
+      insert into site_members (site_id, user_id, role_id)
+        select 'default', id, role_id from users where deleted_at is null;
+    `,
+  },
+  {
+    // P2: the browser session records which site the signed-in user is currently
+    // editing. Nullable — a multi-org user has no current site until they pick
+    // one; per-request capabilities resolve from site_members(current_site_id).
+    // Backfill the adopted install's existing sessions to 'default'.
+    id: '023_sessions_current_site',
+    sql: `
+      alter table sessions add column current_site_id text;
+      update sessions set current_site_id = 'default' where current_site_id is null;
+    `,
+  },
+  {
+    // P3: adopt all existing content into the 'default' site. Lands together
+    // with the repository write-path threading (createDataRow / the site shell
+    // now set site_id), so existing rows ('default') and new writes ('default')
+    // share the same tenant-scoped unique-index partition — no split, no
+    // duplicate slugs. System `data_tables` definitions stay global (site_id
+    // NULL); only content and custom tables carry a site.
+    id: '024_backfill_default_site_content',
+    sql: `
+      update data_tables set site_id = 'default'
+        where site_id is null and id not in ('pages', 'posts', 'components', 'layouts');
+      update data_rows set site_id = 'default' where site_id is null;
+      update data_row_versions set site_id = 'default' where site_id is null;
+      update data_row_redirects set site_id = 'default' where site_id is null;
+      update site_snapshots set site_id = 'default' where site_id is null;
+      update published_runtime_assets set site_id = 'default' where site_id is null;
+    `,
+  },
+  {
+    // Custom-domain column for the Host→site serving resolver: a visitor request
+    // on a merchant's own domain resolves to that site's published slot. Nullable
+    // + additive; the partial-unique index mirrors the `sites (slug)` index above.
+    id: '025_sites_custom_domain',
+    sql: `
+      alter table sites add column custom_domain text;
+      create unique index if not exists sites_custom_domain_idx
+        on sites (custom_domain) where custom_domain is not null;
+    `,
+  },
 ]

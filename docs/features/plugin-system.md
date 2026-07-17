@@ -390,7 +390,7 @@ bun run bootstrap:check    # CI-style drift check (no writes)
 
 The architecture gate `src/__tests__/architecture/plugin-bootstrap-fresh.test.ts`
 re-bundles in memory and fails if the committed artifact drifts from its source —
-the same pattern as `vendor-icons-fresh.test.ts` for vendored icons. The eval
+the same pattern as the other generated-artifact freshness gates. The eval
 boundary is unavoidable; the authoring surface is not.
 
 ### VM lifecycle and disposal

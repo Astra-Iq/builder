@@ -73,7 +73,7 @@ describe('media-asset mapping (single source of truth)', () => {
       // An externally-hosted asset on a non-default storage adapter, with a
       // variant that carries its own storagePath / storageAdapterId — exactly
       // the fields the drifted publisher copy used to drop.
-      await createMediaAsset(db, {
+      await createMediaAsset(db, { siteId: 'default',
         id: 'a1',
         filename: 'hero.png',
         mimeType: 'image/png',
@@ -84,7 +84,7 @@ describe('media-asset mapping (single source of truth)', () => {
         storageAdapterId: 's3.main',
         externallyHosted: true,
       })
-      await setMediaAssetVariants(db, 'a1', {
+      await setMediaAssetVariants(db, 'default', 'a1', {
         width: 1200,
         height: 800,
         blurHash: 'LKO2?V',
@@ -101,7 +101,7 @@ describe('media-asset mapping (single source of truth)', () => {
         ],
       })
 
-      const repoAsset = await getMediaAsset(db, 'a1')
+      const repoAsset = await getMediaAsset(db, 'default', 'a1')
       expect(repoAsset).not.toBeNull()
 
       const page = makePageWithImageProp('n1', 'src', '/uploads/hero.png')
@@ -135,7 +135,7 @@ describe('media-asset mapping (single source of truth)', () => {
   it('publisher derives a variant storagePath for legacy rows missing it', async () => {
     const { db, cleanup } = await createTestDb()
     try {
-      await createMediaAsset(db, {
+      await createMediaAsset(db, { siteId: 'default',
         id: 'a2',
         filename: 'logo.png',
         mimeType: 'image/png',
@@ -195,7 +195,7 @@ describe('media-asset column / insert integrity', () => {
   it('createMediaAsset returns a fully-hydrated row (no half-hydrated projection)', async () => {
     const { db, cleanup } = await createTestDb()
     try {
-      const asset = await createMediaAsset(db, {
+      const asset = await createMediaAsset(db, { siteId: 'default',
         id: 'a3',
         filename: 'pic.png',
         mimeType: 'image/png',

@@ -102,6 +102,7 @@ function makeFakeDb() {
           role_description: '',
           role_is_system: true,
           role_capabilities_json: ['media.read', 'media.write', 'media.replace', 'media.delete'],
+          current_site_id: 'default',
         } as Row] : [],
         rowCount: admin ? 1 : 0,
       }
@@ -133,21 +134,23 @@ function makeFakeDb() {
       return { rows: [], rowCount: 0 }
     }
 
-    // createMediaAsset — values[0..8] = id, filename, mimeType, sizeBytes,
-    // storagePath, publicPath, uploadedByUserId, storageAdapterId,
-    // externallyHosted. The fake DB router matches before importMediaAsset
-    // because importMediaAsset's column list is much longer.
-    if (normalized.includes('insert into media_assets') && values.length === 9) {
+    // createMediaAsset — values[0..9] = id, siteId, filename, mimeType,
+    // sizeBytes, storagePath, publicPath, uploadedByUserId, storageAdapterId,
+    // externallyHosted (site_id is the tenant key, column index 1). The fake DB
+    // router matches before importMediaAsset because importMediaAsset's column
+    // list is much longer.
+    if (normalized.includes('insert into media_assets') && values.length === 10) {
       const row = mediaRow({
         id: values[0],
-        filename: values[1],
-        mime_type: values[2],
-        size_bytes: values[3],
-        storage_path: values[4],
-        public_path: values[5],
-        uploaded_by_user_id: values[6],
-        storage_adapter_id: values[7],
-        externally_hosted: values[8],
+        site_id: values[1],
+        filename: values[2],
+        mime_type: values[3],
+        size_bytes: values[4],
+        storage_path: values[5],
+        public_path: values[6],
+        uploaded_by_user_id: values[7],
+        storage_adapter_id: values[8],
+        externally_hosted: values[9],
         created_at: new Date('2026-01-03').toISOString(),
       })
       media.push(row)
@@ -204,11 +207,13 @@ function makeFakeDb() {
       return { rows: [row as Row], rowCount: 1 }
     }
 
-    // softDeleteMediaAsset — values[0] = deletedAt timestamp, values[1] = id
+    // soft-delete / restore share the `update media_assets set deleted_at`
+    // prefix. Disambiguate on the SQL text: restore writes the literal
+    // `deleted_at = null` (id at values[0]); soft-delete binds a timestamp
+    // (values[0] = deletedAt, values[1] = id). Both carry a trailing
+    // `and site_id = ?` the fake DB can ignore (single-site tests).
     if (normalized.startsWith('update media_assets set deleted_at')) {
-      // Two branches share this prefix: the soft-delete (sets a timestamp)
-      // and the restore (clears it back to null). Disambiguate via values.
-      const isRestore = values[0] === null || values.length === 1
+      const isRestore = normalized.includes('deleted_at = null')
       if (isRestore) {
         const row = media.find((asset) => asset.id === values[0])
         if (!row) return { rows: [], rowCount: 0 }
@@ -291,7 +296,7 @@ describe('CMS media repository', () => {
   it('stores and lists media asset metadata newest-first', async () => {
     const db = makeFakeDb()
 
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',
@@ -303,7 +308,7 @@ describe('CMS media repository', () => {
       externallyHosted: false,
     })
 
-    const assets = await listMediaAssets(db)
+    const assets = await listMediaAssets(db, 'default')
 
     expect(assets).toHaveLength(1)
     expect(assets[0]).toMatchObject({
@@ -323,7 +328,7 @@ describe('CMS media repository', () => {
   it('renames media asset metadata', async () => {
     const db = makeFakeDb()
 
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',
@@ -335,7 +340,7 @@ describe('CMS media repository', () => {
       externallyHosted: false,
     })
 
-    const asset = await renameMediaAsset(db, 'asset_1', 'Hero renamed.png')
+    const asset = await renameMediaAsset(db, 'default', 'asset_1', 'Hero renamed.png')
 
     expect(asset?.filename).toBe('Hero renamed.png')
     expect(db.media[0].filename).toBe('Hero renamed.png')
@@ -344,7 +349,7 @@ describe('CMS media repository', () => {
   it('hard-deletes media asset metadata and returns its storage path', async () => {
     const db = makeFakeDb()
 
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',
@@ -356,7 +361,7 @@ describe('CMS media repository', () => {
       externallyHosted: false,
     })
 
-    const deleted = await deleteMediaAsset(db, 'asset_1')
+    const deleted = await deleteMediaAsset(db, 'default', 'asset_1')
 
     expect(deleted?.storagePath).toBe('asset_1-hero.png')
     expect(db.media).toHaveLength(0)
@@ -570,7 +575,7 @@ describe('CMS media handlers', () => {
   it('lists uploaded media assets for authenticated admins', async () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',
@@ -598,7 +603,7 @@ describe('CMS media handlers', () => {
   it('renames uploaded media assets for authenticated admins', async () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',
@@ -630,7 +635,7 @@ describe('CMS media handlers', () => {
     const cookie = await createCookie(db)
     const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
     mediaStorageRegistry.configureLocalDisk({ uploadsDir })
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',
@@ -670,7 +675,7 @@ describe('CMS media handlers', () => {
     const cookie = await createCookie(db)
     const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
     mediaStorageRegistry.configureLocalDisk({ uploadsDir })
-    await createMediaAsset(db, {
+    await createMediaAsset(db, { siteId: 'default',
       id: 'asset_1',
       filename: 'hero.png',
       mimeType: 'image/png',

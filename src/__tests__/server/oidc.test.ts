@@ -5,6 +5,7 @@ import {
   buildAuthorizeUrl,
   buildEndSessionUrl,
   createPkcePair,
+  fetchUserinfo,
   readLogtoConfig,
   verifyIdToken,
   type LogtoConfig,
@@ -39,6 +40,48 @@ describe('Logto OIDC client', () => {
     expect(cfg?.postLogoutRedirectUri).toBe('https://cms.test/admin')
     expect(cfg?.authorizationEndpoint).toBe('https://x.logto.app/oidc/auth')
     expect(cfg?.issuer).toBe('https://x.logto.app/oidc')
+    // Organization scopes are requested by default so org membership + roles
+    // are available at the userinfo endpoint.
+    expect(cfg?.scopes).toContain('urn:logto:scope:organizations')
+    expect(cfg?.scopes).toContain('urn:logto:scope:organization_roles')
+  })
+
+  it('readLogtoConfig preserves custom scopes while forcing Logto organization scopes', () => {
+    const cfg = readLogtoConfig(
+      {
+        LOGTO_ENDPOINT: 'https://x.logto.app/',
+        LOGTO_APP_ID: 'a',
+        LOGTO_APP_SECRET: 's',
+        LOGTO_SCOPES: 'openid profile email roles custom.scope',
+      },
+      ['https://cms.test'],
+    )
+    expect(cfg?.scopes).toBe(
+      'openid profile email roles custom.scope urn:logto:scope:organizations urn:logto:scope:organization_roles',
+    )
+  })
+
+  it('fetchUserinfo GETs the userinfo endpoint with the bearer token', async () => {
+    let seenUrl = ''
+    let seenAuth = ''
+    const fakeFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      seenUrl = String(url)
+      seenAuth = String((init?.headers as Record<string, string>)?.authorization ?? '')
+      return new Response(JSON.stringify({ sub: 'u1', organization_roles: ['org_a:admin'] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+
+    const info = await fetchUserinfo(CONFIG, 'access-tok', fakeFetch)
+    expect(seenUrl).toBe('https://logto.test/oidc/me')
+    expect(seenAuth).toBe('Bearer access-tok')
+    expect(info.organization_roles).toEqual(['org_a:admin'])
+  })
+
+  it('fetchUserinfo throws OidcError on a non-2xx response', async () => {
+    const failing = (async () => new Response('nope', { status: 401 })) as typeof fetch
+    await expect(fetchUserinfo(CONFIG, 'bad', failing)).rejects.toThrow(OidcError)
   })
 
   it('buildAuthorizeUrl carries client id, PKCE challenge, state and nonce', () => {

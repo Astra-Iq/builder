@@ -70,7 +70,7 @@ describe('site_publish MCP tool', () => {
   })
 
   it('deploys the saved draft through the canonical static publish pipeline', async () => {
-    const site = await getDraftSite(harness.db)
+    const site = await getDraftSite(harness.db, 'default')
     if (!site) throw new Error('default site was not seeded')
     const now = Date.now()
     site.styleRules.issue195 = {
@@ -84,7 +84,7 @@ describe('site_publish MCP tool', () => {
       createdAt: now,
       updatedAt: now,
     }
-    await saveDraftSite(harness.db, site)
+    await saveDraftSite(harness.db, 'default', site)
     const { rows: users } = await harness.db<{ id: string }>`select id from users limit 1`
     const userId = users[0]?.id
     if (!userId) throw new Error('owner user was not seeded')
@@ -112,11 +112,11 @@ describe('site_publish MCP tool', () => {
     expect(result.result?.isError).toBeFalsy()
     expect(JSON.stringify(result.result?.content)).toContain('publishedPages')
 
-    const html = await readArtefact(uploadsDir, '/')
+    const html = await readArtefact(uploadsDir, 'default', '/')
     expect(html).not.toBeNull()
     const cssPaths = [...(html ?? '').matchAll(/href="(\/_instatic\/css\/[^"]+\.css)"/g)]
       .map((match) => match[1]!)
-    const cssAssets = await Promise.all(cssPaths.map((path) => readStaticAsset(uploadsDir, path)))
+    const cssAssets = await Promise.all(cssPaths.map((path) => readStaticAsset(uploadsDir, 'default', path)))
     const css = cssAssets
       .filter((asset): asset is Uint8Array => asset !== null)
       .map((asset) => new TextDecoder().decode(asset))

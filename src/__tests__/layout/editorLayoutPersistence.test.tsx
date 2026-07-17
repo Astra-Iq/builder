@@ -9,8 +9,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { readFileSync } from 'fs'
-import { join } from 'path'
 import { MemoryRouter } from '@admin/lib/routing'
 import { AdminCanvasLayout } from '@admin/layouts/AdminCanvasLayout'
 import { AdminSessionProvider } from '@admin/session'
@@ -22,7 +20,6 @@ import { pageToCells } from '@core/data/pageFromRow'
 import '@modules/base/index'
 
 const LAYOUT_STORAGE_KEY = 'instatic-editor-layout-v2'
-const SRC_ROOT = join(import.meta.dir, '../..')
 
 const originalFetch = globalThis.fetch
 
@@ -440,24 +437,22 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(explorerButton.getAttribute('aria-pressed')).toBe('false')
   })
 
-  it('keeps global AI access separated from the primary rail panels', async () => {
+  it('hides the AI assistant and Dependencies rail affordances', async () => {
     renderEditorLayout()
 
     const rail = await screen.findByRole('navigation', { name: /panel dock/i })
     const primaryButtons = within(screen.getByTestId('panel-rail-primary')).getAllByRole('button')
-    const globalButtons = within(screen.getByTestId('panel-rail-global')).getAllByRole('button')
 
+    // Dependencies + AI are hidden — only Explorer / Framework / Selectors remain.
     expect(primaryButtons.map((button) => button.getAttribute('data-testid'))).toEqual([
       'panel-rail-explorer',
       'panel-rail-framework',
       'panel-rail-selectors',
-      'panel-rail-dependencies',
     ])
     expect(primaryButtons.map((button) => button.getAttribute('data-icon'))).toEqual([
       'database-solid',
       'colors-swatch',
       'paint-bucket',
-      'box-stack',
     ])
     const primaryAccents = primaryButtons.map((button) => button.getAttribute('data-accent'))
     expect(primaryAccents.every(Boolean)).toBe(true)
@@ -466,17 +461,11 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     // used to resolve to — consolidating into one rail button shouldn't
     // change its established color.
     expect(primaryAccents[0]).toBe('gold')
-    expect(globalButtons.map((button) => button.getAttribute('data-testid'))).toEqual(['panel-rail-agent'])
-    expect(globalButtons[0]?.getAttribute('data-icon')).toBe('ai-settings-solid')
-    expect(globalButtons[0]?.getAttribute('data-accent')).toBeTruthy()
-    expect(rail.lastElementChild).toBe(screen.getByTestId('panel-rail-global'))
 
-    const railCss = readFileSync(
-      join(SRC_ROOT, 'admin/pages/site/sidebars/PanelRail/PanelRail.module.css'),
-      'utf8',
-    )
-    const globalGroupRule = railCss.match(/\.globalGroup\s*{[^}]*}/)?.[0] ?? ''
-    expect(globalGroupRule).not.toContain('border-top')
+    // The Dependencies rail button is gone and the global AI group never renders.
+    expect(within(rail).queryByTestId('panel-rail-dependencies')).toBeNull()
+    expect(within(rail).queryByTestId('panel-rail-agent')).toBeNull()
+    expect(screen.queryByTestId('panel-rail-global')).toBeNull()
   })
 
   it('docks left rail panels into an expanding sidebar and switches between them', async () => {
@@ -517,26 +506,14 @@ describe('AdminCanvasLayout — permanent panel rail', () => {
     expect(useEditorStore.getState().isAgentOpen).toBe(false)
     expect(within(sidebar).getByTestId('explorer-panel')).toBeDefined()
 
-    fireEvent.click(within(rail).getByRole('button', { name: /open dependencies panel/i }))
+    fireEvent.click(within(rail).getByRole('button', { name: /open selectors panel/i }))
 
     expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('dependencies')
+    expect(sidebar.getAttribute('data-active-panel')).toBe('selectors')
     expect(sidebar.getAttribute('style')).toContain('--left-sidebar-panel-width: 320px')
-    expect(useEditorStore.getState().dependenciesPanelOpen).toBe(true)
+    expect(useEditorStore.getState().selectorsPanelOpen).toBe(true)
     expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
     expect(useEditorStore.getState().isAgentOpen).toBe(false)
-    expect(within(sidebar).getByTestId('dependencies-panel')).toBeDefined()
-    expect(within(sidebar).getByTestId('deps-section')).toBeDefined()
-
-    fireEvent.click(within(rail).getByRole('button', { name: /open ai assistant panel/i }))
-
-    expect(sidebar.getAttribute('data-expanded')).toBe('true')
-    expect(sidebar.getAttribute('data-active-panel')).toBe('agent')
-    expect(sidebar.getAttribute('style')).toContain('--left-sidebar-panel-width: 320px')
-    expect(useEditorStore.getState().isAgentOpen).toBe(true)
-    expect(useEditorStore.getState().dependenciesPanelOpen).toBe(false)
-    expect(useEditorStore.getState().explorerPanelOpen).toBe(false)
-    expect(within(sidebar).getByTestId('agent-panel')).toBeDefined()
   })
 
   it('docks Properties into the right sidebar by default and can switch to floating mode', async () => {

@@ -1,6 +1,7 @@
 /**
  * AdminSectionNavigation — the row of section links shown inside the
- * editor toolbar (Site · Content · Data · Media).
+ * editor toolbar. Only the Site workspace is surfaced; the Content / Data /
+ * Media workspaces are hidden (their routes redirect to /admin/site).
  *
  * Lives next to the toolbar styles it consumes so both the heavy
  * AdminCanvasLayout (Site), AdminWorkspaceCanvasLayout (Content / Data /
@@ -8,9 +9,6 @@
  * without one layout pulling another layout's module graph in.
  */
 import { type MouseEvent, type ReactNode } from 'react'
-import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
-import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
-import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import type { CmsCurrentUser } from '@core/persistence'
 import { Link, useLocation } from '@admin/lib/routing'
@@ -43,6 +41,9 @@ export function AdminSectionNavigation({
   const unrestricted = !effectiveUser
   const canAccess = (workspace: AdminWorkspace) => unrestricted || canAccessWorkspace(effectiveUser, workspace)
 
+  // The Content / Data / Media workspaces are intentionally hidden from the
+  // merchant editor — only the Site workspace is surfaced. Their routes redirect
+  // to /admin/site (see router.tsx), and the section components stay intact.
   return (
     <>
       {canAccess('site') && (
@@ -51,33 +52,6 @@ export function AdminSectionNavigation({
           icon={<LayoutSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
           label="Site"
           active={section === 'site'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('content') && (
-        <NavItem
-          to="/admin/content"
-          icon={<ArticleSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Content"
-          active={section === 'content'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('data') && (
-        <NavItem
-          to="/admin/data"
-          icon={<DatabaseSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Data"
-          active={section === 'data'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('media') && (
-        <NavItem
-          to="/admin/media"
-          icon={<ImagesSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Media"
-          active={section === 'media'}
           onNavigateStart={onWorkspaceNavigateStart}
         />
       )}

@@ -10,6 +10,7 @@
 import { loopSourceRegistry } from '@core/loops/registry'
 import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { publishStorageRegistry } from '../../publish/publishStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import { hostPlugins } from './registry'
 import { workers, pendingRequests } from './workerState'
@@ -105,6 +106,7 @@ export function handleWorkerCrash(pluginId: string, reason: string): void {
     hookBus.unregisterPlugin(pluginId)
     mediaStorageRegistry.unregisterPlugin(pluginId)
     mediaVariantDelegateRegistry.unregisterPlugin(pluginId)
+    publishStorageRegistry.unregisterPlugin(pluginId)
     hostPlugins.delete(pluginId)
   }
 

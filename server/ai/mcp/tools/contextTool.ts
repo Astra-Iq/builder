@@ -11,6 +11,8 @@
  * come straight from the DB. No browser snapshot.
  */
 import { Type } from '@core/utils/typeboxHelpers'
+import { DEFAULT_SITE_ID } from '../../../repositories/sites'
+
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool, ToolContext } from '../../runtime/types'
 import { getDraftSite } from '../../../repositories/site'
@@ -57,7 +59,7 @@ export const contextMcpTools: AiTool[] = [
     requiredCapabilities: CONTEXT_READ_CAPS,
     handler: async (input, ctx: ToolContext) => {
       const { entryId } = input as { entryId?: string }
-      const site = await getDraftSite(ctx.db)
+      const site = await getDraftSite(ctx.db, DEFAULT_SITE_ID)
 
       const { rows } = await ctx.db<PageRow>`
         select id, table_id, cells_json

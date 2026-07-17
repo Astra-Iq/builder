@@ -13,6 +13,7 @@ import type { ServerPluginLifecycleHook, PluginManifest, PluginSettingsValues } 
 import { loopSourceRegistry } from '@core/loops/registry'
 import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
+import { publishStorageRegistry } from '../../publish/publishStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 import type { SerializedUser } from '../protocol/messages'
@@ -52,6 +53,7 @@ export async function loadPluginInWorker(args: {
     hookBus.unregisterPlugin(args.manifest.id)
     mediaStorageRegistry.unregisterPlugin(args.manifest.id)
     mediaVariantDelegateRegistry.unregisterPlugin(args.manifest.id)
+    publishStorageRegistry.unregisterPlugin(args.manifest.id)
   }
   hostPlugins.set(args.manifest.id, {
     manifest: args.manifest,
@@ -100,6 +102,7 @@ export async function unloadPluginInWorker(pluginId: string): Promise<void> {
     hookBus.unregisterPlugin(pluginId)
     mediaStorageRegistry.unregisterPlugin(pluginId)
     mediaVariantDelegateRegistry.unregisterPlugin(pluginId)
+    publishStorageRegistry.unregisterPlugin(pluginId)
   }
   hostPlugins.delete(pluginId)
 

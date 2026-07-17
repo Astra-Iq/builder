@@ -12,6 +12,8 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { DEFAULT_SITE_ID } from '../../../repositories/sites'
+
 import type { CoreCapability } from '@core/capabilities'
 import type { AiTool } from '../types'
 import {
@@ -201,7 +203,7 @@ const listDocumentsTool: AiTool = {
   inputSchema: ListDocumentsInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
-    const all = await listDataRows(ctx.db, args.tableId)
+    const all = await listDataRows(ctx.db, DEFAULT_SITE_ID, args.tableId)
     let filtered = all
     if (args.status) filtered = filtered.filter((r) => r.status === args.status)
     if (args.authorUserId) filtered = filtered.filter((r) => r.authorUserId === args.authorUserId)
@@ -339,7 +341,7 @@ const listMediaTool: AiTool = {
   inputSchema: ListMediaInput,
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListMediaInput>
-    const all = await listMediaAssets(ctx.db)
+    const all = await listMediaAssets(ctx.db, DEFAULT_SITE_ID)
     const lowerQuery = args.query?.toLowerCase()
     const lowerMime = args.mimeType?.toLowerCase()
     const filtered = all.filter((asset) => {

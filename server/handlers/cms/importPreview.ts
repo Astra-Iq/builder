@@ -42,6 +42,8 @@ export async function handleImportPreviewRoute(
 
   const user = await requireCapability(req, db, 'data.export')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const bundle = await readValidatedBody(req, SiteBundleSchema)
   if (!bundle) {
@@ -65,7 +67,7 @@ export async function handleImportPreviewRoute(
       // Local rows for this table (0 if the table doesn't exist locally yet)
       let localRows: DataRow[]
       if (localTableIds.has(table.id)) {
-        localRows = await listDataRows(db, table.id)
+        localRows = await listDataRows(db, siteId, table.id)
       } else {
         localRows = []
       }

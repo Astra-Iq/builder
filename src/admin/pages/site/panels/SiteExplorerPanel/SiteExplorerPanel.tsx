@@ -13,6 +13,7 @@ import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
 import { SiteCreateDialog, buildScriptPath, buildStylePath, slugifySiteItemName, type SiteCreatePayload, type SiteCreateKind } from '@admin/shared/dialogs/SiteCreateDialog'
+import { liveUrl } from '@admin/state/adminUi'
 import type { ExplorerContextMenuItem } from '@site/explorer-actions'
 import { TemplateSettingsDialog, type TemplateSettingsPayload } from '@admin/shared/dialogs/TemplateSettingsDialog'
 import { useVCDeletionConfirm } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
@@ -413,7 +414,7 @@ export function SiteExplorerPanel({
         label: 'Open in new tab',
         icon: <ExternalLinkSolidIcon size={13} />,
         action: () => {
-          window.open(pagePublicPath(page.slug), '_blank', 'noopener,noreferrer')
+          window.open(liveUrl(pagePublicPath(page.slug)), '_blank', 'noopener,noreferrer')
           setContextMenu(null)
         },
       },

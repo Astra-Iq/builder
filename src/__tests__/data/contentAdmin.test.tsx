@@ -413,9 +413,9 @@ afterEach(() => {
 })
 
 describe('ContentPage', () => {
-  it('uses SPA navigation with active Site and Content labels in the shared toolbar', () => {
+  it('uses SPA navigation to the active Site label in the shared toolbar', () => {
     render(
-      <AdminTestProviders initialEntries={['/admin/site']}>
+      <AdminTestProviders initialEntries={['/admin/content']}>
         <Routes>
           <Route
             path="/admin/site"
@@ -447,18 +447,22 @@ describe('ContentPage', () => {
       </AdminTestProviders>,
     )
 
-    expect(screen.getByText('Site')).toBeDefined()
-    fireEvent.click(screen.getByRole('link', { name: 'Content' }))
-    expect(screen.getByLabelText('current route').textContent).toBe('/admin/content')
-    expect(screen.getByText('Content')).toBeDefined()
+    // Only the Site workspace is surfaced in the nav (Content/Data/Media are
+    // hidden), so the shared toolbar exposes exactly one soft-navigation link —
+    // Site — which SPA-navigates to the site editor and renders as the active
+    // (non-link) label once there.
     expect(screen.getByRole('link', { name: 'Site' })).toBeDefined()
+    fireEvent.click(screen.getByRole('link', { name: 'Site' }))
+    expect(screen.getByLabelText('current route').textContent).toBe('/admin/site')
+    expect(screen.getByText('Site')).toBeDefined()
+    expect(screen.queryByRole('link', { name: 'Site' })).toBeNull()
   })
 
   it('does not delay admin navigation or use route changes to collapse workspace panels', async () => {
     const transitionStarts: string[] = []
 
     render(
-      <AdminTestProviders initialEntries={['/admin/site']}>
+      <AdminTestProviders initialEntries={['/admin/content']}>
         <Routes>
           <Route
             path="/admin/site"
@@ -466,15 +470,7 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="site"
-                  adminNavigationSlot={(
-                    <AdminSectionNavigation
-                      section="site"
-                      onWorkspaceNavigateStart={() => {
-                        transitionStarts.push('content')
-                        return 180
-                      }}
-                    />
-                  )}
+                  adminNavigationSlot={<AdminSectionNavigation section="site" />}
                   rightSlot={<span>site controls</span>}
                 />
                 <LocationProbe />
@@ -487,7 +483,15 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="content"
-                  adminNavigationSlot={<AdminSectionNavigation section="content" />}
+                  adminNavigationSlot={(
+                    <AdminSectionNavigation
+                      section="content"
+                      onWorkspaceNavigateStart={() => {
+                        transitionStarts.push('site')
+                        return 180
+                      }}
+                    />
+                  )}
                   rightSlot={<span>content controls</span>}
                 />
                 <LocationProbe />
@@ -498,11 +502,11 @@ describe('ContentPage', () => {
       </AdminTestProviders>,
     )
 
-    fireEvent.click(screen.getByRole('link', { name: 'Content' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Site' }))
 
-    expect(transitionStarts).toEqual(['content'])
-    expect(screen.getByLabelText('current route').textContent).toBe('/admin/content')
-    expect(screen.getByText('content controls')).toBeDefined()
+    expect(transitionStarts).toEqual(['site'])
+    expect(screen.getByLabelText('current route').textContent).toBe('/admin/site')
+    expect(screen.getByText('site controls')).toBeDefined()
 
     const layoutSource = readFileSync(join(process.cwd(), 'src/admin/layouts/AdminCanvasLayout/AdminCanvasLayout.tsx'), 'utf8')
     expect(layoutSource).not.toContain('setLeftSidebarPanel(null)')
@@ -522,7 +526,7 @@ describe('ContentPage', () => {
     let resolveNavigation: (() => void) | null = null
 
     render(
-      <AdminTestProviders initialEntries={['/admin/site']}>
+      <AdminTestProviders initialEntries={['/admin/content']}>
         <Routes>
           <Route
             path="/admin/site"
@@ -530,15 +534,7 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="site"
-                  adminNavigationSlot={(
-                    <AdminSectionNavigation
-                      section="site"
-                      onWorkspaceNavigateStart={() => new Promise<void>((resolve) => {
-                        transitionStarts.push('content')
-                        resolveNavigation = resolve
-                      })}
-                    />
-                  )}
+                  adminNavigationSlot={<AdminSectionNavigation section="site" />}
                   rightSlot={<span>site controls</span>}
                 />
                 <LocationProbe />
@@ -551,7 +547,15 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="content"
-                  adminNavigationSlot={<AdminSectionNavigation section="content" />}
+                  adminNavigationSlot={(
+                    <AdminSectionNavigation
+                      section="content"
+                      onWorkspaceNavigateStart={() => new Promise<void>((resolve) => {
+                        transitionStarts.push('site')
+                        resolveNavigation = resolve
+                      })}
+                    />
+                  )}
                   rightSlot={<span>content controls</span>}
                 />
                 <LocationProbe />
@@ -562,18 +566,18 @@ describe('ContentPage', () => {
       </AdminTestProviders>,
     )
 
-    fireEvent.click(screen.getByRole('link', { name: 'Content' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Site' }))
 
-    expect(transitionStarts).toEqual(['content'])
-    expect(screen.getByLabelText('current route').textContent).toBe('/admin/site')
-    expect(screen.getByText('site controls')).toBeDefined()
+    expect(transitionStarts).toEqual(['site'])
+    expect(screen.getByLabelText('current route').textContent).toBe('/admin/content')
+    expect(screen.getByText('content controls')).toBeDefined()
 
     resolveNavigation?.()
 
     await waitFor(() => {
-      expect(screen.getByLabelText('current route').textContent).toBe('/admin/content')
+      expect(screen.getByLabelText('current route').textContent).toBe('/admin/site')
     })
-    expect(screen.getByText('content controls')).toBeDefined()
+    expect(screen.getByText('site controls')).toBeDefined()
   })
 
   it('keeps loading skeletons visible until content entries finish loading', async () => {
@@ -1494,7 +1498,9 @@ describe('ContentPage', () => {
       const menu = screen.getByRole('menu', { name: /publishing actions/i })
       fireEvent.click(within(menu).getByRole('menuitem', { name: /open live post/i }))
 
-      expect(openCalls).toEqual([['/posts/untitled', '_blank', 'noopener,noreferrer']])
+      expect(openCalls).toEqual([
+        [`${window.location.origin}/posts/untitled`, '_blank', 'noopener,noreferrer'],
+      ])
     } finally {
       window.open = originalOpen
     }

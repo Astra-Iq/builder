@@ -7,12 +7,14 @@
  *   selection without committing files — used by the picker to show a live
  *   "selected: 42 KB" hint before the user clicks Install.
  * - `installCmsGoogleFont` posts the user's chosen variants/subsets and returns
- *   a fully-shaped `FontEntry` to merge into `site.settings.fonts`.
+ *   a fully-shaped `FontEntry` (Google fonts load from the CSS2 CDN — no files
+ *   are downloaded) to merge into `site.settings.fonts`.
  * - `registerCustomFont` posts uploaded media-asset ids + variants and returns
  *   a `FontEntry` (`source: 'custom'`) to merge into `site.settings.fonts`.
- * - `deleteCmsFontFamily` removes the on-disk woff2 files for a Google family
- *   slug. Custom fonts reference shared media assets, so removing one is a
- *   metadata-only edit — no server call.
+ *
+ * Removing a font is a metadata-only edit (drop the entry from
+ * `site.settings.fonts`) — Google fonts have no self-hosted files and custom
+ * fonts reference shared media assets, so there is no delete endpoint.
  */
 
 import type { FontEntry } from '@core/fonts'
@@ -108,16 +110,4 @@ export async function registerCustomFont(
     fallbackMessage: 'Custom font registration failed',
   })
   return payload.font
-}
-
-export async function deleteCmsFontFamily(
-  family: string,
-  fetchImpl: FetchLike = defaultFetch,
-  basePath = '/admin/api/cms',
-): Promise<void> {
-  await apiRequest(`${basePath}/fonts/family/${encodeURIComponent(family)}`, {
-    method: 'DELETE',
-    fetchImpl,
-    fallbackMessage: 'Font delete failed',
-  })
 }

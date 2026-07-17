@@ -4,7 +4,7 @@ import { createSqliteClient } from '../../../db/sqlite'
 import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
-import { createUser } from '../../users'
+import { seedUser } from '../../../../src/__tests__/helpers/seedUser'
 import { getPublishedDataRowByRoute } from '../publish'
 
 async function freshDb(): Promise<DbClient> {
@@ -21,16 +21,14 @@ describe('getPublishedDataRowByRoute — author/publisher join parity', () => {
   })
 
   it('resolves author + publisher fields from the shared user-ref joins', async () => {
-    const author = await createUser(db, {
+    const author = await seedUser(db, {
       email: 'author@example.com',
       displayName: 'Ada Author',
-      passwordHash: 'h-author',
       roleId: 'admin',
     })
-    const publisher = await createUser(db, {
+    const publisher = await seedUser(db, {
       email: 'publisher@example.com',
       displayName: 'Percy Publisher',
-      passwordHash: 'h-publisher',
       roleId: 'client',
     })
 
@@ -46,11 +44,11 @@ describe('getPublishedDataRowByRoute — author/publisher join parity', () => {
     await db`
       insert into data_rows
         (id, table_id, cells_json, slug, status, author_user_id, published_by_user_id)
-      values (${rowId}, ${'posts'}, ${'{}'}, ${'hello-world'}, ${'published'}, ${author.id}, ${author.id})
+      values (${rowId}, ${'posts'}, ${'{}'}, ${'hello-world'}, ${'published'}, ${author}, ${author})
     `
     await db`
       insert into data_row_versions (id, row_id, version_number, cells_json, slug, published_by_user_id)
-      values (${versionId}, ${rowId}, ${1}, ${'{}'}, ${'hello-world'}, ${publisher.id})
+      values (${versionId}, ${rowId}, ${1}, ${'{}'}, ${'hello-world'}, ${publisher})
     `
     await db`update data_rows set active_version_id = ${versionId} where id = ${rowId}`
 
@@ -63,13 +61,13 @@ describe('getPublishedDataRowByRoute — author/publisher join parity', () => {
     expect(published!.tableRouteBase).toBe('/posts')
 
     // Author fields come from data_rows.author_user_id.
-    expect(published!.authorUserId).toBe(author.id)
+    expect(published!.authorUserId).toBe(author)
     expect(published!.authorName).toBe('Ada Author')
     expect(published!.authorRoleSlug).toBe('admin')
     expect(published!.authorRoleName).toBe('Admin')
 
     // Publisher fields come from data_row_versions.published_by_user_id.
-    expect(published!.publishedByUserId).toBe(publisher.id)
+    expect(published!.publishedByUserId).toBe(publisher)
     expect(published!.publishedByName).toBe('Percy Publisher')
     expect(published!.publishedByRoleSlug).toBe('client')
     expect(published!.publishedByRoleName).toBe('Client')

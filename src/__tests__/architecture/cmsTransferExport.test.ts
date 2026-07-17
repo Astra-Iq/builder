@@ -22,7 +22,8 @@ import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import { saveDraftSite } from '../../../server/repositories/site'
-import { createUser } from '../../../server/repositories/users'
+import { createSite } from '../../../server/repositories/setup'
+import { seedUser } from '../helpers/seedUser'
 import { createSession } from '../../../server/auth/sessions'
 import { createMediaAsset } from '../../../server/repositories/media'
 import {
@@ -64,17 +65,17 @@ const TEST_SHELL: SiteShell = {
 // ---------------------------------------------------------------------------
 
 async function seedAuth(db: DbClient): Promise<string> {
-  await saveDraftSite(db, TEST_SHELL)
-  await createUser(db, {
+  await createSite(db, 'Test Site', {})
+  await saveDraftSite(db, 'default', TEST_SHELL)
+  await seedUser(db, {
     id: 'test-owner',
     email: 'owner@export.test',
     displayName: 'Test Owner',
-    passwordHash: 'placeholder-hash',
     roleId: 'owner',
-    allowOwnerRole: true,
   })
   const token = createSessionToken()
   await createSession(db, {
+    currentSiteId: 'default',
     idHash: await hashSessionToken(token),
     userId: 'test-owner',
     expiresAt: sessionExpiry(),
@@ -169,12 +170,12 @@ beforeAll(async () => {
   })
 
   // Seed 2 rows in posts
-  const p1 = await createDataRow(db, {
+  const p1 = await createDataRow(db, { siteId: 'default',
     tableId: 'posts',
     cells: { title: 'Post One', slug: 'post-one' },
     slug: 'post-one',
   })
-  const p2 = await createDataRow(db, {
+  const p2 = await createDataRow(db, { siteId: 'default',
     tableId: 'posts',
     cells: { title: 'Post Two', slug: 'post-two' },
     slug: 'post-two',
@@ -183,7 +184,7 @@ beforeAll(async () => {
   post2Id = p2.id
 
   // Seed 1 row in pages
-  const pg = await createDataRow(db, {
+  const pg = await createDataRow(db, { siteId: 'default',
     tableId: 'pages',
     cells: { title: 'Home Page', slug: 'home', body: { nodes: {}, rootNodeId: 'root' } },
     slug: 'home',
@@ -191,7 +192,7 @@ beforeAll(async () => {
   pageId = pg.id
 
   // Seed 1 row in My Data
-  const cr = await createDataRow(db, {
+  const cr = await createDataRow(db, { siteId: 'default',
     tableId: CUSTOM_TABLE_ID,
     cells: { name: 'Custom Item One' },
     slug: '',
@@ -346,7 +347,7 @@ describe('handleExportRoute — GET ?includeMedia=1', () => {
     const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-export-media-'))
     try {
       await writeFile(join(uploadsDir, 'logo.png'), Buffer.from('fake-png-bytes'))
-      await createMediaAsset(mediaDb, {
+      await createMediaAsset(mediaDb, { siteId: 'default',
         id: 'asset-logo',
         filename: 'logo.png',
         mimeType: 'image/png',
@@ -518,7 +519,7 @@ describe('handleExportRoute — POST /export/estimate with embedded media', () =
       // Base64 payload that isn't a clean multiple of 3 (exercises padding).
       const fileBytes = Buffer.alloc(5000, 7)
       await writeFile(join(uploadsDir, 'seed.bin'), fileBytes)
-      await createMediaAsset(mediaDb, {
+      await createMediaAsset(mediaDb, { siteId: 'default',
         id: 'asset-1',
         filename: 'seed.bin',
         mimeType: 'application/octet-stream',

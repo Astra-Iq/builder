@@ -1,23 +1,30 @@
 /**
- * useInstalledFontFaces — inject the site's installed `@font-face` rules into
- * the admin document head so panels can render text in the site's real fonts.
+ * useInstalledFontFaces — make the site's installed fonts render in the admin
+ * document head so panels can preview text in the site's real fonts.
  *
- * The canvas iframe injects the same rules for its preview, but the admin
- * shell (where panels live) carries no `@font-face` declarations of its own —
- * without this, any `fontFamily` referencing an installed family silently
- * falls back to system-ui. The self-hosted `/uploads/fonts/...` `src` URLs
- * resolve through the dev proxy / published server exactly as on the canvas.
+ * Two paths, matching the canvas + publisher:
+ *   - Custom fonts inject their self-hosted `@font-face` rules (a `<style>`);
+ *     the `/uploads/media/...` `src` URLs resolve through the dev proxy /
+ *     published server exactly as on the canvas.
+ *   - Google fonts inject a CSS2 CDN `<link>` (they are not self-hosted).
+ *
+ * Without this, any `fontFamily` referencing an installed family would fall
+ * back to system-ui inside the admin shell (where panels live, outside the
+ * canvas iframe).
  *
  * Shared by the Typography panel's FontsSection and the Framework panel's
- * FrameworkHome — `dataSource` tags each caller's `<style>` element so the
- * two injections stay distinguishable in the inspector.
+ * FrameworkHome — `dataSource` tags each caller's injected element so the
+ * injections stay distinguishable in the inspector.
  */
 import { useEffect } from 'react'
 import type { FontEntry } from '@core/fonts'
-import { generateSiteFontsCss } from '@core/fonts'
+import { buildGoogleFontsHref, generateSiteFontsCss } from '@core/fonts'
 
 export function useInstalledFontFaces(fonts: readonly FontEntry[], dataSource: string): void {
-  const css = generateSiteFontsCss({ items: [...fonts] })
+  const settings = { items: [...fonts] }
+  const css = generateSiteFontsCss(settings)
+  const googleFontsHref = buildGoogleFontsHref(settings)
+
   useEffect(() => {
     if (!css) return
     const styleEl = document.createElement('style')
@@ -28,4 +35,16 @@ export function useInstalledFontFaces(fonts: readonly FontEntry[], dataSource: s
       styleEl.remove()
     }
   }, [css, dataSource])
+
+  useEffect(() => {
+    if (!googleFontsHref) return
+    const linkEl = document.createElement('link')
+    linkEl.rel = 'stylesheet'
+    linkEl.href = googleFontsHref
+    linkEl.setAttribute('data-source', `${dataSource}:google-fonts`)
+    document.head.appendChild(linkEl)
+    return () => {
+      linkEl.remove()
+    }
+  }, [googleFontsHref, dataSource])
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  buildGoogleFontsHref,
+  buildGoogleFontsLinkTags,
   fontFaceCount,
   generateFontTokenVariablesCss,
   generateFontsCss,
@@ -7,9 +9,12 @@ import {
 } from '@core/fonts'
 import type { FontEntry, SiteFontsSettings } from '@core/fonts'
 
+// Self-hosted @font-face is emitted only for `source: 'custom'` fonts; Google
+// fonts load from the CSS2 CDN instead. These generator-mechanics fixtures use
+// custom source so `generateSiteFontsCss` actually emits faces for them.
 const inter: FontEntry = {
   id: 'f1',
-  source: 'google',
+  source: 'custom',
   family: 'Inter',
   variants: ['400', '700italic'],
   subsets: ['latin'],
@@ -27,7 +32,7 @@ const malicious: FontEntry = {
   // breakouts in family name, and an off-brand path. The generator must
   // strip / refuse all of these.
   id: 'f2',
-  source: 'google',
+  source: 'custom',
   family: 'Bad"Family</style>',
   variants: ['400'],
   subsets: ['latin'],
@@ -69,6 +74,25 @@ describe('generateSiteFontsCss', () => {
     expect(generateSiteFontsCss(null)).toBe('')
     expect(generateSiteFontsCss(undefined)).toBe('')
     expect(generateSiteFontsCss({ items: [] })).toBe('')
+  })
+
+  it('never self-hosts a google entry, even a legacy one with /uploads/fonts files', () => {
+    // Live installs from the old download flow still carry `/uploads/fonts/...`
+    // files on their google entries. Those must NOT emit a self-hosted
+    // @font-face (it 404s on edge/object-storage) — google loads from the CDN.
+    const legacyGoogle: FontEntry = {
+      id: 'legacy',
+      source: 'google',
+      family: 'Inter',
+      variants: ['400'],
+      subsets: ['latin'],
+      files: [
+        { variant: '400', subset: 'latin', path: '/uploads/fonts/inter/400-latin.woff2', format: 'woff2' },
+      ],
+      createdAt: 0,
+      updatedAt: 0,
+    }
+    expect(generateSiteFontsCss({ items: [legacyGoogle] })).toBe('')
   })
 
   it('emits one @font-face per slice with unicode-range when present', () => {
@@ -203,5 +227,87 @@ describe('generateFontsCss', () => {
 describe('fontFaceCount', () => {
   it('counts woff2 files only', () => {
     expect(fontFaceCount(inter)).toBe(2)
+  })
+})
+
+describe('buildGoogleFontsLinkTags / buildGoogleFontsHref', () => {
+  // Google entries now carry NO on-disk files — they load from the CSS2 CDN.
+  const googleInter: FontEntry = {
+    id: 'g1',
+    source: 'google',
+    family: 'Inter',
+    variants: ['400', '700italic'],
+    subsets: ['latin'],
+    files: [],
+    createdAt: 0,
+    updatedAt: 0,
+  }
+  const googleRoboto: FontEntry = {
+    id: 'g2',
+    source: 'google',
+    family: 'Roboto Slab',
+    variants: ['400'],
+    subsets: ['latin'],
+    files: [],
+    createdAt: 0,
+    updatedAt: 0,
+  }
+  const customEntry: FontEntry = {
+    id: 'c1',
+    source: 'custom',
+    family: 'Acme',
+    variants: ['400'],
+    subsets: ['latin'],
+    files: [
+      { variant: '400', subset: 'latin', path: '/uploads/media/acme.woff2', format: 'woff2', mediaAssetId: 'm1' },
+    ],
+    createdAt: 0,
+    updatedAt: 0,
+  }
+
+  it('builds a CSS2 href with the ital,wght axis and display=swap', () => {
+    expect(buildGoogleFontsHref({ items: [googleInter] })).toBe(
+      'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;1,700&display=swap',
+    )
+  })
+
+  it('combines multiple google families into one stylesheet and URL-encodes names', () => {
+    const href = buildGoogleFontsHref({ items: [googleInter, googleRoboto] })
+    expect(href).toBe(
+      'https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;1,700&family=Roboto%20Slab:ital,wght@0,400&display=swap',
+    )
+  })
+
+  it('emits preconnect hints + one escaped stylesheet link', () => {
+    const tags = buildGoogleFontsLinkTags({ items: [googleInter] })
+    expect(tags).toContain('<link rel="preconnect" href="https://fonts.googleapis.com">')
+    expect(tags).toContain('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
+    // The `&` join is HTML-escaped for a valid attribute.
+    expect(tags).toContain(
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;1,700&amp;display=swap">',
+    )
+  })
+
+  it('ignores custom fonts — they stay self-hosted @font-face', () => {
+    expect(buildGoogleFontsHref({ items: [customEntry] })).toBeNull()
+    expect(buildGoogleFontsLinkTags({ items: [customEntry] })).toBe('')
+  })
+
+  it('returns null / empty for missing or google-less libraries', () => {
+    expect(buildGoogleFontsHref(null)).toBeNull()
+    expect(buildGoogleFontsHref({ items: [] })).toBeNull()
+    expect(buildGoogleFontsLinkTags(undefined)).toBe('')
+  })
+
+  it('URL-encodes + HTML-escapes a malicious family name (no attribute breakout)', () => {
+    const evil: FontEntry = {
+      ...googleInter,
+      family: 'Bad"><script>alert(1)</script>',
+    }
+    const tags = buildGoogleFontsLinkTags({ items: [evil] })
+    expect(tags).not.toContain('<script>')
+    expect(tags).not.toContain('"><')
+    // The raw quote/angle brackets are percent-encoded inside the href.
+    expect(tags).toContain('%22%3E%3Cscript%3E')
   })
 })

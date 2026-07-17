@@ -57,6 +57,8 @@ export interface DataRowWrite {
 }
 
 export interface ApplyDataRowChangesInput {
+  /** The tenant that owns these rows — scopes the roster reads and new inserts. */
+  siteId: string
   tableId: string
   /** Rows to create/update, with their final slugs. */
   writes: DataRowWrite[]
@@ -88,13 +90,13 @@ async function stampDataRowSeq(db: DbClient, rowId: string, seq: number): Promis
  */
 export async function applyDataRowChangesInTx(
   tx: DbClient,
-  { tableId, writes, deleteIds, actorUserId, seq }: ApplyDataRowChangesInput,
+  { siteId, tableId, writes, deleteIds, actorUserId, seq }: ApplyDataRowChangesInput,
 ): Promise<ApplyDataRowChangesResult> {
   let deletedPublished = false
 
-  const existing = await listDataRowIdSlugs(tx, tableId)
+  const existing = await listDataRowIdSlugs(tx, siteId, tableId)
   const existingSlugById = new Map(existing.map((r) => [r.id, r.slug]))
-  const softDeletedIds = new Set(await listSoftDeletedDataRowIds(tx, tableId))
+  const softDeletedIds = new Set(await listSoftDeletedDataRowIds(tx, siteId, tableId))
 
   // 1. Explicit deletes first — frees the slugs of deleted rows for the
   //    writes below. Deletes are SCOPED TO THIS TABLE: an id that doesn't
@@ -132,7 +134,7 @@ export async function applyDataRowChangesInTx(
       await resurrectDataRow(tx, write.id, { cells: write.cells, slug: '' }, actorUserId)
       parked.push(write)
     } else {
-      await createDataRow(tx, { id: write.id, tableId, cells: write.cells, slug: write.slug }, actorUserId)
+      await createDataRow(tx, { id: write.id, siteId, tableId, cells: write.cells, slug: write.slug }, actorUserId)
     }
     await stampDataRowSeq(tx, write.id, seq)
   }

@@ -2,40 +2,59 @@ import { describe, expect, it } from 'bun:test'
 import { createTestDb } from '../helpers/createTestDb'
 import { syncSystemRoles } from '../../../server/repositories/roles'
 import {
+  eligibleOrgs,
   extractLogtoClaims,
-  mapLogtoRoleToBuilderRole,
+  mapOrgRoleToBuilderRole,
   provisionUserFromClaims,
 } from '../../../server/auth/logtoIdentity'
 
 describe('Logto identity mapping', () => {
-  it('maps Logto role names onto builder roles, highest privilege first', () => {
-    expect(mapLogtoRoleToBuilderRole(['owner'])).toBe('owner')
-    expect(mapLogtoRoleToBuilderRole(['Admin'])).toBe('admin') // case-insensitive
-    expect(mapLogtoRoleToBuilderRole(['client'])).toBe('client')
-    expect(mapLogtoRoleToBuilderRole(['member'])).toBe('member')
-    expect(mapLogtoRoleToBuilderRole(['admin', 'client'])).toBe('admin') // highest privilege wins
-    expect(mapLogtoRoleToBuilderRole([])).toBe('member') // default
-    expect(mapLogtoRoleToBuilderRole(['something-unknown'])).toBe('member')
+  it('maps org role names onto builder roles; Viewer/unknown grant nothing', () => {
+    expect(mapOrgRoleToBuilderRole('owner')).toBe('owner')
+    expect(mapOrgRoleToBuilderRole('Admin')).toBe('admin') // case-insensitive
+    expect(mapOrgRoleToBuilderRole('viewer')).toBeNull()
+    expect(mapOrgRoleToBuilderRole('member')).toBeNull()
+    expect(mapOrgRoleToBuilderRole('something-unknown')).toBeNull()
   })
 
-  it('extracts the claims the builder needs from an ID-token payload', () => {
+  it('extracts org memberships from merged id-token + userinfo claims', () => {
     const claims = extractLogtoClaims({
       sub: 'u1',
       email: 'alice@example.com',
       name: 'Alice',
       picture: 'https://cdn/x.png',
-      roles: ['admin'],
+      organization_data: [
+        { id: 'org_a', name: 'Acme Store' },
+        { id: 'org_b', name: 'Beta Boutique' },
+      ],
+      organization_roles: ['org_a:owner', 'org_b:viewer'],
     })
-    expect(claims).toEqual({
-      subject: 'u1',
-      email: 'alice@example.com',
-      displayName: 'Alice',
-      avatarUrl: 'https://cdn/x.png',
-      roles: ['admin'],
-    })
+    expect(claims.subject).toBe('u1')
+    expect(claims.email).toBe('alice@example.com')
+    expect(claims.displayName).toBe('Alice')
+    expect(claims.organizations).toEqual([
+      { id: 'org_a', name: 'Acme Store', roles: ['owner'] },
+      { id: 'org_b', name: 'Beta Boutique', roles: ['viewer'] },
+    ])
   })
 
-  it('provisions a local identity from claims and re-syncs the role on re-login', async () => {
+  it('eligibleOrgs keeps only Owner/Admin orgs, highest privilege each', () => {
+    const claims = extractLogtoClaims({
+      sub: 'u1',
+      organization_data: [
+        { id: 'org_a', name: 'Acme' },
+        { id: 'org_b', name: 'Beta' },
+        { id: 'org_c', name: 'Gamma' },
+      ],
+      organization_roles: ['org_a:admin', 'org_a:owner', 'org_b:viewer'],
+    })
+    expect(eligibleOrgs(claims)).toEqual([
+      { orgId: 'org_a', name: 'Acme', builderRoleId: 'owner' }, // owner outranks admin
+    ])
+    // org_b is Viewer-only (denied); org_c has no role (denied).
+  })
+
+  it('provisions a local identity with a no-capability global baseline', async () => {
     const { db, cleanup } = await createTestDb()
     try {
       await syncSystemRoles(db)
@@ -45,24 +64,24 @@ describe('Logto identity mapping', () => {
         email: 'alice@example.com',
         displayName: 'Alice',
         avatarUrl: null,
-        roles: ['admin'],
+        organizations: [{ id: 'org_a', name: 'Acme', roles: ['owner'] }],
       })
-      expect(user.role.slug).toBe('admin')
+      // The global role is the member baseline (no caps) — real authorization is
+      // per-site via site_members, assigned by the callback.
+      expect(user.role.slug).toBe('member')
+      expect(user.capabilities).toEqual([])
       expect(user.logtoSubject).toBe('logto|1')
-      expect(user.capabilities).toContain('site.structure.edit')
 
-      // Same subject on next login updates in place (no duplicate) and re-maps
-      // the role from Logto.
+      // Same subject on next login updates in place (no duplicate row).
       const again = await provisionUserFromClaims(db, {
         subject: 'logto|1',
         email: 'alice@example.com',
         displayName: 'Alice Renamed',
         avatarUrl: null,
-        roles: ['client'],
+        organizations: [],
       })
       expect(again.id).toBe(user.id)
       expect(again.displayName).toBe('Alice Renamed')
-      expect(again.role.slug).toBe('client')
     } finally {
       await cleanup()
     }

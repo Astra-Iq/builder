@@ -43,6 +43,7 @@ async function mintSession(db: DbClient, userId: string): Promise<string> {
     expiresAt: sessionExpiry(),
     ipAddress: null,
     userAgent: null,
+    currentSiteId: 'default',
   })
   return `${SESSION_COOKIE_NAME}=${token}`
 }

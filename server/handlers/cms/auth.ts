@@ -20,26 +20,32 @@
  * handler; `runRouteTable` handles 404-vs-405. Adding a route is "new handler
  * function + one row in `AUTH_ROUTES`".
  */
+import { Type } from '@sinclair/typebox'
 import type { DbClient } from '../../db/client'
 import { createSessionToken, hashSessionToken, sessionExpiry } from '../../auth/tokens'
-import { createSession, revokeSessionByHash } from '../../auth/sessions'
+import { createSession, revokeSessionByHash, setSessionCurrentSite } from '../../auth/sessions'
 import { getSessionHash, requireAuthenticatedUser } from '../../auth/authz'
 import { toPublicUser } from '../../repositories/users'
+import { ensureSiteForOrg, listSitesForUser } from '../../repositories/sites'
+import { getSiteMemberRoleId, upsertSiteMember } from '../../repositories/siteMembers'
 import { createAuditEvent } from '../../repositories/audit'
 import { publicOriginIsHttps } from '../../auth/security'
+import { siteLiveOrigin } from '../../publish/requestSite'
 import {
   buildAuthorizeUrl,
   buildEndSessionUrl,
   createPkcePair,
   exchangeCodeForTokens,
+  fetchUserinfo,
   randomUrlToken,
   readLogtoConfig,
   verifyIdToken,
   type LogtoConfig,
 } from '../../auth/oidc'
-import { extractLogtoClaims, provisionUserFromClaims } from '../../auth/logtoIdentity'
+import { eligibleOrgs, extractLogtoClaims, provisionUserFromClaims } from '../../auth/logtoIdentity'
+import { ensureSiteHasHomePage } from '../../bootstrapSite'
 import { resolvePublicOrigins } from '../../config'
-import { jsonResponse, setCookieHeader } from '../../http'
+import { jsonResponse, readValidatedBody, setCookieHeader } from '../../http'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
 import { clearSessionCookie, sessionCookie } from './session'
 import { runRouteTable, type Route } from './routeTable'
@@ -142,14 +148,36 @@ async function handleCallback(req: Request, db: DbClient): Promise<Response> {
   }
 
   let userId: string
-  let auditActorId: string
+  let currentSiteId: string | null
   try {
     const tokens = await exchangeCodeForTokens(config, code, tx.codeVerifier)
     const payload = await verifyIdToken(config, tokens.id_token, tx.nonce)
-    const claims = extractLogtoClaims(payload)
+    // Logto serves org membership + roles from userinfo, not the ID token; fall
+    // back to ID-token claims only if userinfo is briefly unavailable.
+    let userinfo: Record<string, unknown> = {}
+    try {
+      userinfo = await fetchUserinfo(config, tokens.access_token)
+    } catch (err) {
+      console.error('[auth:callback] userinfo fetch failed', err)
+    }
+    const claims = extractLogtoClaims({ ...payload, ...userinfo })
     const user = await provisionUserFromClaims(db, claims)
     userId = user.id
-    auditActorId = user.id
+
+    // Sync every org where the user is Owner/Admin into a site + membership,
+    // and make sure each site has a starter homepage to open (a freshly
+    // provisioned org site otherwise has no content — an empty editor).
+    const eligible = eligibleOrgs(claims)
+    let firstSiteId: string | null = null
+    for (const org of eligible) {
+      const siteId = await ensureSiteForOrg(db, { orgId: org.orgId, name: org.name })
+      await upsertSiteMember(db, { siteId, userId, roleId: org.builderRoleId })
+      await ensureSiteHasHomePage(db, siteId)
+      if (firstSiteId === null) firstSiteId = siteId
+    }
+    // One eligible org → enter it directly; zero or many → no current site yet
+    // (the admin shell shows the "access unavailable" screen or the org picker).
+    currentSiteId = eligible.length === 1 ? firstSiteId : null
   } catch (err) {
     console.error('[auth:callback]', err)
     return setCookieHeader(
@@ -164,19 +192,20 @@ async function handleCallback(req: Request, db: DbClient): Promise<Response> {
     idHash: await hashSessionToken(token),
     userId,
     expiresAt,
+    currentSiteId,
     ...requestAuditContext(req),
   })
   await createAuditEvent(db, {
-    actorUserId: auditActorId,
+    actorUserId: userId,
     action: 'login.success',
     targetType: 'user',
-    targetId: auditActorId,
+    targetId: userId,
     metadata: {},
     ...requestAuditContext(req),
   })
 
-  const res = redirect('/admin/site', [sessionCookie(req, token, expiresAt), clearTx])
-  return res
+  const destination = currentSiteId ? '/admin/site' : '/admin'
+  return redirect(destination, [sessionCookie(req, token, expiresAt), clearTx])
 }
 
 async function handleLogout(req: Request, db: DbClient): Promise<Response> {
@@ -201,7 +230,45 @@ async function handleLogout(req: Request, db: DbClient): Promise<Response> {
 async function handleMe(req: Request, db: DbClient): Promise<Response> {
   const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
-  return jsonResponse({ user: toPublicUser(user), role: user.role, capabilities: user.capabilities })
+  // The sites the user may edit (empty => "access unavailable") and the one the
+  // session is currently on (null => the admin shell shows the org picker).
+  const memberships = await listSitesForUser(db, user.id)
+  const availableSites = memberships.map((site) => ({
+    id: site.id,
+    name: site.name,
+    slug: site.slug,
+    roleId: site.roleId,
+    liveOrigin: siteLiveOrigin(site),
+  }))
+  const currentSite = user.currentSiteId
+    ? availableSites.find((site) => site.id === user.currentSiteId) ?? null
+    : null
+  return jsonResponse({
+    user: toPublicUser(user),
+    role: user.role,
+    capabilities: user.capabilities,
+    currentSite,
+    availableSites,
+  })
+}
+
+const SwitchSiteSchema = Type.Object({ siteId: Type.String({ minLength: 1 }) })
+
+/** Point the current session at another site the user is a member of. */
+async function handleSwitchSite(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireAuthenticatedUser(req, db)
+  if (user instanceof Response) return user
+  const body = await readValidatedBody(req, SwitchSiteSchema)
+  if (!body) return jsonResponse({ error: 'Invalid request' }, { status: 400 })
+
+  const roleId = await getSiteMemberRoleId(db, body.siteId, user.id)
+  if (!roleId) {
+    return jsonResponse({ error: 'You are not a member of that site' }, { status: 403 })
+  }
+  const idHash = await getSessionHash(req)
+  if (!idHash) return jsonResponse({ error: 'No active session' }, { status: 401 })
+  await setSessionCurrentSite(db, idHash, body.siteId)
+  return jsonResponse({ ok: true, siteId: body.siteId })
 }
 
 const AUTH_ROUTES: readonly Route<[]>[] = [
@@ -209,6 +276,7 @@ const AUTH_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: `${CMS_API_PREFIX}/auth/callback`, handler: handleCallback },
   { method: 'GET', pattern: `${CMS_API_PREFIX}/auth/logout`, handler: handleLogout },
   { method: 'GET', pattern: `${CMS_API_PREFIX}/me`, handler: handleMe },
+  { method: 'POST', pattern: `${CMS_API_PREFIX}/session/switch-site`, handler: handleSwitchSite },
 ]
 
 export async function handleAuthRoutes(req: Request, db: DbClient): Promise<Response | null> {

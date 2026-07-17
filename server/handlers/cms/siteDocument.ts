@@ -150,6 +150,8 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
 
   const user = await requireAnyCapability(req, db, SITE_WRITE_CAPABILITIES)
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   const body = await readValidatedBody(req, SiteDocumentBodySchema)
   if (!body) return badRequest('Invalid request body')
@@ -169,7 +171,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     // cheap (id, slug) page projection plus the component roster it needs
     // for ref validation — never all three hydrated collections.
 
-    const previousShell = await getDraftSite(db)
+    const previousShell = await getDraftSite(db, siteId)
     const shell = validateSite(body.site)
     validateSiteWriteDiff(previousShell, shell, user.capabilities)
 
@@ -188,7 +190,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
       body.changedPages.length > 0 ||
       body.mode === 'replace'
     const existingVCs: VisualComponent[] = needsComponentRoster
-      ? (await listDataRows(db, 'components')).flatMap((r) => {
+      ? (await listDataRows(db, siteId, 'components')).flatMap((r) => {
           const vc = visualComponentFromRow(r)
           return vc ? [vc] : []
         })
@@ -218,7 +220,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     const needsLayoutRoster =
       body.changedLayouts.length > 0 || body.deletedLayoutIds.length > 0 || body.mode === 'replace'
     const existingLayouts: SavedLayout[] = needsLayoutRoster
-      ? (await listDataRows(db, 'layouts')).flatMap((r) => {
+      ? (await listDataRows(db, siteId, 'layouts')).flatMap((r) => {
           const layout = savedLayoutFromRow(r)
           return layout ? [layout] : []
         })
@@ -252,7 +254,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     // loaded only for the per-category diff, which callers holding all three
     // site-write capabilities skip entirely (its fast path).
     const needsPageSlugs = body.changedPages.length > 0 || body.mode === 'replace'
-    const existingPageSlugs = needsPageSlugs ? await listDataRowIdSlugs(db, 'pages') : []
+    const existingPageSlugs = needsPageSlugs ? await listDataRowIdSlugs(db, siteId, 'pages') : []
     const changedPageIdsRaw = new Set(
       body.changedPages
         .map((p) => (p && typeof p === 'object' ? (p as { id?: unknown }).id : undefined))
@@ -277,7 +279,7 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
         : []
     const previousPages: Page[] =
       pages.length > 0 && !hasAllSiteCaps
-        ? (await listDataRows(db, 'pages')).map(pageFromRow)
+        ? (await listDataRows(db, siteId, 'pages')).map(pageFromRow)
         : []
     validatePageWriteDiff({
       previousPages,
@@ -308,25 +310,25 @@ export async function handleSiteDocumentRoutes(req: Request, db: DbClient): Prom
     let deletedPublishedPage = false
     await db.transaction(async (tx) => {
       seq = await allocateSiteSeq(tx)
-      await saveDraftSite(tx, shell, user.id)
-      await stampDraftSiteSeq(tx, seq)
+      await saveDraftSite(tx, siteId, shell, user.id)
+      await stampDraftSiteSeq(tx, siteId, seq)
       // Empty change sets skip their table entirely — a shell-only save
       // issues no row queries inside the transaction.
       if (componentWrites.length > 0 || componentDeleteIds.size > 0) {
         await applyDataRowChangesInTx(tx, {
-          tableId: 'components', writes: componentWrites, deleteIds: componentDeleteIds,
+          siteId, tableId: 'components', writes: componentWrites, deleteIds: componentDeleteIds,
           actorUserId: user.id, seq,
         })
       }
       if (layoutWrites.length > 0 || layoutDeleteIds.size > 0) {
         await applyDataRowChangesInTx(tx, {
-          tableId: 'layouts', writes: layoutWrites, deleteIds: layoutDeleteIds,
+          siteId, tableId: 'layouts', writes: layoutWrites, deleteIds: layoutDeleteIds,
           actorUserId: user.id, seq,
         })
       }
       if (pageWrites.length > 0 || pageDeleteIds.size > 0) {
         const pagesResult = await applyDataRowChangesInTx(tx, {
-          tableId: 'pages', writes: pageWrites, deleteIds: pageDeleteIds,
+          siteId, tableId: 'pages', writes: pageWrites, deleteIds: pageDeleteIds,
           actorUserId: user.id, seq,
         })
         deletedPublishedPage = pagesResult.deletedPublished

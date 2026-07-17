@@ -146,70 +146,9 @@ export function getPanelsCommands(): Command[] {
       },
     },
 
-    // ── Explorer → Media tab ─────────────────────────────────────────────────
-    {
-      id: 'panels.showMedia',
-      title: 'Show Media',
-      subtitle: 'Open the Explorer panel on the Media (asset library) tab',
-      group: 'editor',
-      iconName: 'image-solid',
-      keywords: ['panel', 'media', 'assets', 'images', 'files', 'explorer', 'show'],
-      workspaces: ['site'],
-      capability: PANEL_CAPABILITY,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        try {
-          const { useEditorStore } = await import('@site/store/store')
-          const store = useEditorStore.getState()
-          store.setExplorerPanelTab('media')
-          store.setExplorerPanelOpen(true)
-        } catch (err) {
-          console.error('[spotlight] show media failed:', err)
-        }
-      },
-    },
-
-    // ── Dependencies panel ───────────────────────────────────────────────────
-    {
-      id: 'panels.toggleDependencies',
-      title: 'Toggle Dependencies panel',
-      subtitle: 'Show or hide the site dependencies panel',
-      group: 'editor',
-      iconName: 'package-solid',
-      keywords: ['panel', 'dependencies', 'packages', 'plugins', 'toggle'],
-      workspaces: ['site'],
-      capability: PANEL_CAPABILITY,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        try {
-          const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().toggleLeftSidebarPanel('dependencies')
-        } catch (err) {
-          console.error('[spotlight] toggleLeftSidebarPanel dependencies failed:', err)
-        }
-      },
-    },
-
-    // ── AI Assistant panel ───────────────────────────────────────────────────
-    {
-      id: 'panels.toggleAgent',
-      title: 'Toggle AI Assistant panel',
-      subtitle: 'Show or hide the AI assistant panel',
-      group: 'editor',
-      iconName: 'sparkles-solid',
-      keywords: ['panel', 'ai', 'assistant', 'agent', 'claude', 'toggle'],
-      workspaces: ['site'],
-      capability: PANEL_CAPABILITY,
-      run: async (ctx) => {
-        ctx.closeSpotlight()
-        try {
-          const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().toggleLeftSidebarPanel('agent')
-        } catch (err) {
-          console.error('[spotlight] toggleLeftSidebarPanel agent failed:', err)
-        }
-      },
-    },
+    // The Explorer Media tab, Dependencies panel, and AI Assistant panel are
+    // hidden from the editor, so they intentionally have no spotlight command
+    // (the panels + store state still exist; they just aren't surfaced here).
 
     // ── Properties panel ─────────────────────────────────────────────────────
     {

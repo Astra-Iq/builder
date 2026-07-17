@@ -692,6 +692,46 @@ describe('publishPage', () => {
     expect(html).toContain('<h1>Hello</h1>')
   })
 
+  it('links Google fonts from the CSS2 CDN and opens the CSP when a google font is installed', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    const proj = makeSite({
+      settings: {
+        ...makeSite().settings,
+        fonts: {
+          items: [
+            {
+              id: 'g1',
+              source: 'google',
+              family: 'Inter',
+              variants: ['400'],
+              subsets: ['latin'],
+              files: [],
+              createdAt: 0,
+              updatedAt: 0,
+            },
+          ],
+        },
+      },
+    })
+    const { html } = publishPage(page, proj, registry)
+    expect(html).toContain(
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400&amp;display=swap">',
+    )
+    expect(html).toContain('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
+    // CSP opens style-src (googleapis) + font-src (gstatic) for the CDN.
+    expect(html).toContain('https://fonts.googleapis.com')
+    expect(html).toContain("font-src 'self' https://fonts.gstatic.com")
+    // Google fonts are NOT self-hosted — no /uploads/fonts/ @font-face.
+    expect(html).not.toContain('/uploads/fonts/')
+  })
+
+  it('omits Google font links and keeps the tight CSP with no google font', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
+    const { html } = publishPage(page, site, registry)
+    expect(html).not.toContain('fonts.googleapis.com')
+    expect(html).not.toContain('font-src')
+  })
+
   it('filename is index.html for slug "index"', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
     page.slug = 'index'

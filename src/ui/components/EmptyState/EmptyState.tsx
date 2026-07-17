@@ -16,7 +16,7 @@
  *     empty canvas).
  *
  * Optional content slots (all renderable in either variant):
- *   - icon         — tiny pixel-art icon shown above the title
+ *   - icon         — tiny icon shown above the title
  *   - title        — primary line ("No colors yet.", "Empty page", etc.)
  *   - description  — secondary hint shown underneath
  *   - action       — CTA, almost always a Button primitive
@@ -50,7 +50,7 @@ interface EmptyStateProps {
   plain?: boolean
   /** Override the default text alignment. Card defaults to start, centered to center. */
   align?: 'start' | 'center'
-  /** Optional pixel-art icon shown above the title. */
+  /** Optional icon shown above the title. */
   icon?: ReactNode
   /** Primary line ("No colors yet.", "Empty page", etc.). */
   title?: ReactNode

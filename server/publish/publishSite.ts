@@ -49,6 +49,8 @@ import {
 } from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
+import { pushPublishedSite } from './publishPush'
+import { syncSiteHostMappings } from './edgeHostMap'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 
 interface PublishResult {
@@ -78,16 +80,18 @@ function createSnapshot(
 
 export async function publishDraftSite(
   db: DbClient,
+  siteId: string,
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
   // Serialize against every other publish so the version read→bake→bump window
   // can't interleave and mis-stamp baked hole shells (ISS-038).
-  return withPublishLock(() => publishDraftSiteLocked(db, adminUserId, uploadsDir))
+  return withPublishLock(() => publishDraftSiteLocked(db, siteId, adminUserId, uploadsDir))
 }
 
 async function publishDraftSiteLocked(
   db: DbClient,
+  siteId: string,
   adminUserId: string,
   uploadsDir?: string,
 ): Promise<PublishResult> {
@@ -98,7 +102,7 @@ async function publishDraftSiteLocked(
   // write (autosaves, row publishes) behind it. `withPublishLock` already
   // serializes publishes, and version numbers are only allocated by publish
   // paths under that same lock, so reading outside the transaction is stable.
-  const site = await getDraftSiteDocument(db)
+  const site = await getDraftSiteDocument(db, siteId)
   if (!site) throw new Error('draft site not found')
 
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
@@ -204,7 +208,7 @@ async function publishDraftSiteLocked(
   const nextPublishVersion = getPublishVersion() + 1
   if (uploadsDir) {
     try {
-      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, siteId)
 
       // Every distinct static asset referenced by ANY baked artefact.
       // Content-hashed filenames dedupe identical bytes across pages to a
@@ -289,7 +293,7 @@ async function publishDraftSiteLocked(
       for (const [publicPath, bytes] of assetsByPath) {
         await writeStaticAsset(slotDir, publicPath, bytes)
       }
-      await swapSlot(uploadsDir, slot)
+      await swapSlot(uploadsDir, siteId, slot)
     } catch (err) {
       console.error('[publish:site] static artefact write failed (live renderer remains active):', err)
     }
@@ -301,6 +305,28 @@ async function publishDraftSiteLocked(
   // window where the freshly-swapped shells (stamped nextPublishVersion) are
   // live while the version counter still reads the old value.
   bumpPublishVersion()
+
+  // Publish push: ship the just-swapped generation to the elected object-storage
+  // adapter, keyed per site. Runs AFTER the local swap so the site is already
+  // live locally; the push is derived, best-effort state (a failure is logged,
+  // never fatal — the local slot stays authoritative). The built-in local-disk
+  // adapter no-ops, so the default single-host install pays only one lookup.
+  if (uploadsDir) {
+    try {
+      await pushPublishedSite(uploadsDir, siteId)
+    } catch (err) {
+      console.error('[publish:site] object-storage push failed (local slot remains live):', err)
+    }
+  }
+
+  // Edge host-map sync: upsert host → siteId into Cloudflare KV so the edge
+  // Worker can resolve this site's subdomain / custom domain. Best-effort and
+  // no-op unless PUBLISH_KV_* is configured.
+  try {
+    await syncSiteHostMappings(db, siteId)
+  } catch (err) {
+    console.error('[publish:site] edge host-map sync failed (serving unaffected):', err)
+  }
 
   return { publishedPages }
 }

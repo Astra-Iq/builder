@@ -56,6 +56,7 @@ export interface PluginPackSummary {
  */
 async function installPluginPackToSite(
   db: DbClient,
+  siteId: string,
   plugin: InstalledPlugin,
   uploadsDir: string,
   actorUserId: string,
@@ -66,16 +67,16 @@ async function installPluginPackToSite(
   const raw = await loadPluginPackFile(uploadsDir, plugin.manifest.assetBasePath, plugin.manifest.pack.path)
   const pack = parsePluginPack(plugin.id, raw)
 
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, siteId)
   if (!shell) return null
 
   // Assemble a temporary SiteDocument for the pack merge function.
   // VCs and layouts are included so applyPluginPackToSite can detect
   // replaced ids.
   const [pageRows, vcRows, layoutRows] = await Promise.all([
-    listDataRows(db, 'pages'),
-    listDataRows(db, 'components'),
-    listDataRows(db, 'layouts'),
+    listDataRows(db, siteId, 'pages'),
+    listDataRows(db, siteId, 'components'),
+    listDataRows(db, siteId, 'layouts'),
   ])
   const { visualComponentFromRow } = await import('../../../../src/core/data/componentFromRow')
   const existingVCs = vcRows.flatMap((r) => {
@@ -97,7 +98,7 @@ async function installPluginPackToSite(
 
   // Extract shell (strip pages, visualComponents, and layouts) and save
   const { pages: packPages, visualComponents: _vcs, layouts: _layouts, ...nextShell } = nextSiteDoc
-  await saveDraftSite(db, nextShell, actorUserId)
+  await saveDraftSite(db, siteId, nextShell, actorUserId)
 
   // Upsert pack pages as data_rows
   const existingPagesById = new Map(pageRows.map((r) => [r.id, r]))
@@ -106,7 +107,7 @@ async function installPluginPackToSite(
     if (existingPagesById.has(page.id)) {
       await saveDataRowDraft(db, page.id, { cells, slug: page.slug }, actorUserId)
     } else {
-      await createDataRow(db, { id: page.id, tableId: 'pages', cells, slug: page.slug }, actorUserId)
+      await createDataRow(db, { id: page.id, siteId, tableId: 'pages', cells, slug: page.slug }, actorUserId)
     }
   }
 
@@ -118,7 +119,7 @@ async function installPluginPackToSite(
     if (existingVCsById.has(vc.id)) {
       await saveDataRowDraft(db, vc.id, { cells, slug }, actorUserId)
     } else {
-      await createDataRow(db, { id: vc.id, tableId: 'components', cells, slug }, actorUserId)
+      await createDataRow(db, { id: vc.id, siteId, tableId: 'components', cells, slug }, actorUserId)
     }
   }
 
@@ -130,7 +131,7 @@ async function installPluginPackToSite(
     if (existingLayoutRowsById.has(layout.id)) {
       await saveDataRowDraft(db, layout.id, { cells, slug }, actorUserId)
     } else {
-      await createDataRow(db, { id: layout.id, tableId: 'layouts', cells, slug }, actorUserId)
+      await createDataRow(db, { id: layout.id, siteId, tableId: 'layouts', cells, slug }, actorUserId)
     }
   }
 
@@ -179,9 +180,10 @@ export async function maybeAutoInstallPluginPack(
   if (!options.uploadsDir) return null
   if (!plugin.manifest.pack) return null
   if (!plugin.grantedPermissions.includes('visualComponents.register')) return null
+  if (!user.currentSiteId) return null
 
   try {
-    return await installPluginPackToSite(db, plugin, options.uploadsDir, user.id, req)
+    return await installPluginPackToSite(db, user.currentSiteId, plugin, options.uploadsDir, user.id, req)
   } catch (err) {
     console.error(`[plugins:${plugin.id}] auto pack install failed`, err)
     return null
@@ -226,9 +228,10 @@ export async function handlePluginPackInstall(
   if (!plugin.manifest.assetBasePath) {
     return badRequest(`Plugin "${pluginId}" has no on-disk package`)
   }
+  if (!user.currentSiteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
   try {
-    const summary = await installPluginPackToSite(db, plugin, options.uploadsDir, user.id, req)
+    const summary = await installPluginPackToSite(db, user.currentSiteId, plugin, options.uploadsDir, user.id, req)
     if (!summary) {
       return badRequest('No draft site to install pack into; finish initial setup first.')
     }

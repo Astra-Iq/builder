@@ -479,14 +479,17 @@ Authors don't toggle anything. `src/core/publisher/dynamicDetection.ts:findDynam
               ├── bake every published data-row route into the same slot
               │     (bakeDataRows.ts — entry-template render, same pipeline)
               ├── bake CSS bundles + runtime JS → writeStaticAsset(inactiveSlot)
-              ├── swapSlot — atomic symlink rename of uploads/published/current
-              └── bumpPublishVersion() — Layer B cache evicts lazily
+              ├── swapSlot — atomic symlink rename of uploads/published/<siteId>/current
+              ├── bumpPublishVersion() — Layer B cache evicts lazily
+              └── pushPublishedSite(uploadsDir, siteId) — ship slot to the
+                    elected object-storage adapter (local-disk = no-op)
 
                           on visitor request
                                 ↓
             server/router.ts → tryServePublicRoute
                                 ↓
-                  renderPublicResolution(db, url, uploadsDir)
+              siteId = resolveSiteForRequest(db, host)
+              renderPublicResolution(db, siteId, url, uploadsDir)
                                 │
        ┌────────────────────────┼────────────────────────────┐
        ▼                        ▼                            ▼
@@ -506,7 +509,9 @@ Server-side publishing helpers live in `server/publish/`:
 | File                              | Role                                                                |
 |-----------------------------------|---------------------------------------------------------------------|
 | `publicRouter.ts`                 | Visitor URL → resolution → Response. Composes Layer A disk-read + Layer B cache. Single entry for every visitor HTML request. |
-| `staticArtefact.ts`               | Layer A. Two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge. |
+| `staticArtefact.ts`               | Layer A. Per-site (`published/<siteId>/`) two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge, whole-slot enumerate (`readActiveSlotArtefacts`). |
+| `requestSite.ts`                  | `resolveSiteForRequest(db, host)` — visitor request → `site_id` before the per-site slot read (custom domain → `<slug>.<PUBLIC_BASE_DOMAIN>` subdomain → default site, 60 s per-host memo). `siteLiveOrigin(site)` is the inverse (site → canonical public origin), carried in the `/me` payload for the admin's "Open live page" button. |
+| `publishStorageRegistry.ts` / `publishPush.ts` / `s3PublishStorage.ts` | Object-storage push: registry of `PublishStorageAdapter`s (local-disk no-op default; first-party S3/R2 adapter on `Bun.S3Client` registered when `PUBLISH_STORAGE_*` is set) + `pushPublishedSite` shipping the swapped slot keyed `sites/<siteId>/…`. |
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
 | `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |

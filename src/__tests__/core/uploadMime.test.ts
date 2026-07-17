@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { checkSizeLimit } from '@core/files/upload'
+import { checkSizeLimit } from '@core/files/uploadLimits'
 
 const MB = 1024 * 1024
 

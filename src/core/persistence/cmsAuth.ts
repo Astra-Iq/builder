@@ -49,14 +49,41 @@ export const CmsCurrentUserSchema = Type.Object({
 
 export type CmsCurrentUser = Static<typeof CmsCurrentUserSchema>
 
+/** A site the signed-in user may edit, as returned by `/me`. */
+export const CmsAvailableSiteSchema = Type.Object({
+  id: Type.String(),
+  name: Type.String(),
+  slug: Type.String(),
+  roleId: Type.String(),
+  /**
+   * Canonical public origin the site serves at (`https://<custom-domain>` or
+   * `https://<slug>.<PUBLIC_BASE_DOMAIN>`), or null when per-host serving is
+   * not configured and the site serves on the app's own origin.
+   */
+  liveOrigin: Type.Union([Type.String(), Type.Null()]),
+})
+
+export type CmsAvailableSite = Static<typeof CmsAvailableSiteSchema>
+
 const CurrentUserEnvelope = Type.Object(
   {
     user: CmsCurrentUserSchema,
     role: Type.Optional(CmsCurrentUserRoleSchema),
     capabilities: Type.Optional(Type.Array(Type.String())),
+    /** The site the session is editing, or null when none is selected. */
+    currentSite: Type.Optional(Type.Union([CmsAvailableSiteSchema, Type.Null()])),
+    /** Every site the user is a member of (empty => access unavailable). */
+    availableSites: Type.Optional(Type.Array(CmsAvailableSiteSchema)),
   },
   { additionalProperties: true },
 )
+
+/** The authenticated identity plus the multi-tenant site context from `/me`. */
+export interface CmsSession {
+  user: CmsCurrentUser
+  currentSite: CmsAvailableSite | null
+  availableSites: CmsAvailableSite[]
+}
 
 /**
  * Read the unauthenticated site-identity (name + favicon URL) the sign-in
@@ -98,4 +125,42 @@ export async function getCurrentCmsUser(
     fallbackMessage: 'CMS current user request failed',
   })
   return body.user
+}
+
+/**
+ * Read the full authenticated session: the identity plus the multi-tenant site
+ * context (which site is active and which sites the user may edit). Drives the
+ * org-picker / access-unavailable states in the admin boot.
+ */
+export async function getCurrentCmsSession(
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  basePath = '/admin/api/cms',
+): Promise<CmsSession> {
+  const body = await apiRequest(`${basePath}/me`, {
+    schema: CurrentUserEnvelope,
+    fetchImpl,
+    fallbackMessage: 'CMS current user request failed',
+  })
+  return {
+    user: body.user,
+    currentSite: body.currentSite ?? null,
+    availableSites: body.availableSites ?? [],
+  }
+}
+
+const SwitchSiteResultSchema = Type.Object({ ok: Type.Boolean(), siteId: Type.String() })
+
+/** Point the session at another site the user is a member of, then it can reload. */
+export async function switchCmsSite(
+  siteId: string,
+  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+  basePath = '/admin/api/cms',
+): Promise<void> {
+  await apiRequest(`${basePath}/session/switch-site`, {
+    method: 'POST',
+    body: { siteId },
+    schema: SwitchSiteResultSchema,
+    fetchImpl,
+    fallbackMessage: 'Switching site failed',
+  })
 }

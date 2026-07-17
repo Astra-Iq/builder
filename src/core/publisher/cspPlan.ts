@@ -69,10 +69,16 @@ export function addCspSources(
  * The publisher's base policy. `script-src`/`worker-src` default to `'none'`
  * and relax to `'self'` (+ the importmap hash) once the page carries any
  * script tag; the runtime cache URLs live under the same origin.
+ *
+ * When the page links Google fonts from the CSS2 CDN (`hasGoogleFonts`),
+ * `style-src` additionally allows the `fonts.googleapis.com` stylesheet and an
+ * explicit `font-src` permits the `fonts.gstatic.com` woff2 binaries. Pages
+ * without Google fonts keep the tight policy (fonts fall to `default-src`).
  */
 export function createBaseCspPlan(opts: {
   anyScriptTag: boolean
   importmapSha?: string
+  hasGoogleFonts?: boolean
 }): CspPlan {
   const plan = emptyCspPlan()
   setCspDirective(plan, 'default-src', ["'self'"])
@@ -81,10 +87,16 @@ export function createBaseCspPlan(opts: {
   if (opts.importmapSha) scriptSources.push(`'sha256-${opts.importmapSha}'`)
   setCspDirective(plan, 'script-src', scriptSources)
 
-  setCspDirective(plan, 'style-src', ["'self'", "'unsafe-inline'"])
+  const styleSources = ["'self'", "'unsafe-inline'"]
+  if (opts.hasGoogleFonts) styleSources.push('https://fonts.googleapis.com')
+  setCspDirective(plan, 'style-src', styleSources)
+
   setCspDirective(plan, 'img-src', ["'self'", 'data:', 'https:'])
   setCspDirective(plan, 'frame-src', ["'none'"])
   setCspDirective(plan, 'worker-src', opts.anyScriptTag ? ["'self'", 'blob:'] : ["'none'"])
+  if (opts.hasGoogleFonts) {
+    setCspDirective(plan, 'font-src', ["'self'", 'https://fonts.gstatic.com'])
+  }
   return plan
 }
 

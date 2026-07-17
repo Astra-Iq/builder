@@ -128,15 +128,15 @@ describe('publishDraftSite — template re-bake', () => {
 
     const db = buildFakeDb(layout, about)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    await publishDraftSite(db, 'user-1', uploadsDir)
+    await publishDraftSite(db, 'default', 'user-1', uploadsDir)
 
     // /about is baked AND wrapped in the layout (MASTHEAD present + own body).
-    const aboutHtml = await readArtefact(uploadsDir, '/about')
+    const aboutHtml = await readArtefact(uploadsDir, 'default', '/about')
     expect(aboutHtml).not.toBeNull()
     expect(aboutHtml).toContain('MASTHEAD')
     expect(aboutHtml).toContain('ABOUT BODY')
 
     // The template page is never baked at its own slug.
-    expect(await readArtefact(uploadsDir, '/layout')).toBeNull()
+    expect(await readArtefact(uploadsDir, 'default', '/layout')).toBeNull()
   })
 })

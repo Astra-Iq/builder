@@ -67,11 +67,11 @@ function readStoredShell(row: SiteRow): SiteShell {
   }
 }
 
-export async function getDraftSite(db: DbClient): Promise<SiteShell | null> {
+export async function getDraftSite(db: DbClient, siteId: string): Promise<SiteShell | null> {
   const { rows } = await db<SiteRow>`
     select id, name, settings_json, created_at, updated_at
-    from site
-    where id = 'default'
+    from sites
+    where id = ${siteId}
     limit 1
   `
   const row = rows[0]
@@ -83,16 +83,16 @@ export async function getDraftSite(db: DbClient): Promise<SiteShell | null> {
 
 export async function saveDraftSite(
   db: DbClient,
+  siteId: string,
   shell: SiteShell,
   _actorUserId: string | null = null,
 ): Promise<void> {
   await db`
-    insert into site (id, name, settings_json)
-    values ('default', ${shell.name}, ${shellToStorage(shell)})
-    on conflict (id) do update
-      set name = excluded.name,
-          settings_json = excluded.settings_json,
-          updated_at = current_timestamp
+    update sites
+    set name = ${shell.name},
+        settings_json = ${shellToStorage(shell)},
+        updated_at = current_timestamp
+    where id = ${siteId}
   `
 }
 
@@ -102,10 +102,10 @@ export async function saveDraftSite(
  * transaction, so shell changes participate in delta reconciliation exactly
  * like row changes (see repositories/syncSequence.ts).
  */
-export async function stampDraftSiteSeq(db: DbClient, seq: number): Promise<void> {
+export async function stampDraftSiteSeq(db: DbClient, siteId: string, seq: number): Promise<void> {
   await db`
-    update site
+    update sites
     set seq = ${seq}
-    where id = 'default'
+    where id = ${siteId}
   `
 }

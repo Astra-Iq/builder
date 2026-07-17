@@ -39,6 +39,19 @@ describe('CspPlan — serialization is deterministic and sorted', () => {
     )
   })
 
+  it('adds the Google Fonts CDN to style-src + font-src when hasGoogleFonts', () => {
+    const csp = serializeCsp(createBaseCspPlan({ anyScriptTag: false, hasGoogleFonts: true }))
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;")
+    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com;")
+  })
+
+  it('keeps the tight style-src and omits font-src without Google fonts', () => {
+    const csp = serializeCsp(createBaseCspPlan({ anyScriptTag: false }))
+    expect(csp).toContain("style-src 'self' 'unsafe-inline';")
+    expect(csp).not.toContain('font-src')
+    expect(csp).not.toContain('fonts.googleapis.com')
+  })
+
   it('produces a byte-identical policy regardless of source insertion order', () => {
     const a = createBaseCspPlan({ anyScriptTag: true, importmapSha: 'ABC123' })
     const b = createBaseCspPlan({ anyScriptTag: true, importmapSha: 'ABC123' })

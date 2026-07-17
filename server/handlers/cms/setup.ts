@@ -72,7 +72,7 @@ const StoredSiteIdentitySchema = Type.Object({
 async function loadPublicSiteIdentity(db: DbClient): Promise<PublicSiteIdentity> {
   const { rows } = await db<SiteRow>`
     select id, name, settings_json, created_at, updated_at
-    from site
+    from sites
     where id = 'default'
     limit 1
   `

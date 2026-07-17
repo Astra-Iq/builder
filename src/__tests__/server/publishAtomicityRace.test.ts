@@ -67,19 +67,19 @@ describe('publishAtomicityRace', () => {
       const gen1Html = (route: string) => `<html>gen-1:${route}</html>`
 
       // First inactive slot (b) — seed with generation 0
-      const { slot: initSlot1, slotDir: initSd1 } = await prepareInactiveSlot(uploadsDir)
+      const { slot: initSlot1, slotDir: initSd1 } = await prepareInactiveSlot(uploadsDir, 'default')
       for (const route of ROUTES) {
         await writeArtefact(initSd1, route, gen0Html(route))
       }
-      await swapSlot(uploadsDir, initSlot1)
+      await swapSlot(uploadsDir, 'default', initSlot1)
       // current → initSlot1, initSlot1 has gen-0 content
 
       // Other slot (the now-inactive one) — seed with generation 1
-      const { slot: initSlot2, slotDir: initSd2 } = await prepareInactiveSlot(uploadsDir)
+      const { slot: initSlot2, slotDir: initSd2 } = await prepareInactiveSlot(uploadsDir, 'default')
       for (const route of ROUTES) {
         await writeArtefact(initSd2, route, gen1Html(route))
       }
-      await swapSlot(uploadsDir, initSlot2)
+      await swapSlot(uploadsDir, 'default', initSlot2)
       // current → initSlot2, initSlot2 has gen-1 content
       // initSlot1 still has gen-0 content (not wiped — it was the active slot)
 
@@ -105,11 +105,11 @@ describe('publishAtomicityRace', () => {
        */
       const writeLoop = async (): Promise<void> => {
         for (let i = 0; i < PUBLISH_CYCLES; i++) {
-          const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+          const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
           for (const route of ROUTES) {
             await writeArtefact(slotDir, route, `<html>cycle-${i}:${route}:slot-${slot}</html>`)
           }
-          await swapSlot(uploadsDir, slot)
+          await swapSlot(uploadsDir, 'default', slot)
         }
       }
 
@@ -122,7 +122,7 @@ describe('publishAtomicityRace', () => {
       const readLoop = async (): Promise<void> => {
         for (let i = 0; i < PUBLISH_CYCLES * READS_PER_CYCLE; i++) {
           for (const route of ROUTES) {
-            const result = await readArtefact(uploadsDir, route)
+            const result = await readArtefact(uploadsDir, 'default', route)
             totalReads++
             if (result === null) {
               nullReads++
@@ -153,27 +153,27 @@ describe('publishAtomicityRace', () => {
       const SENTINEL = 'SENTINEL-'
 
       // Seed both slots
-      const { slot: s1, slotDir: sd1 } = await prepareInactiveSlot(uploadsDir)
+      const { slot: s1, slotDir: sd1 } = await prepareInactiveSlot(uploadsDir, 'default')
       await writeArtefact(sd1, ROUTE, `<html>${SENTINEL}gen-0</html>`)
-      await swapSlot(uploadsDir, s1)
+      await swapSlot(uploadsDir, 'default', s1)
 
-      const { slot: s2, slotDir: sd2 } = await prepareInactiveSlot(uploadsDir)
+      const { slot: s2, slotDir: sd2 } = await prepareInactiveSlot(uploadsDir, 'default')
       await writeArtefact(sd2, ROUTE, `<html>${SENTINEL}gen-1</html>`)
-      await swapSlot(uploadsDir, s2)
+      await swapSlot(uploadsDir, 'default', s2)
 
       let incoherentReads = 0
 
       const writeLoop = async (): Promise<void> => {
         for (let i = 0; i < 100; i++) {
-          const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+          const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
           await writeArtefact(slotDir, ROUTE, `<html>${SENTINEL}gen-${i + 2}</html>`)
-          await swapSlot(uploadsDir, slot)
+          await swapSlot(uploadsDir, 'default', slot)
         }
       }
 
       const readLoop = async (): Promise<void> => {
         for (let i = 0; i < 1000; i++) {
-          const result = await readArtefact(uploadsDir, ROUTE)
+          const result = await readArtefact(uploadsDir, 'default', ROUTE)
           if (result !== null && !result.includes(SENTINEL)) {
             incoherentReads++
           }

@@ -85,6 +85,8 @@ export async function handleImportArchiveRoute(
 
   const user = await requireCapability(req, db, 'data.import')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
   if (!req.body) return badRequest('Import archive request body is required')
 
   const reader = new ZipBodyReader(req.body.getReader())
@@ -138,6 +140,7 @@ export async function handleImportArchiveRoute(
         mediaImported = await importStagedArchiveMediaEntries({
           stagedMedia,
           db,
+          siteId,
           uploadsDir: options.uploadsDir,
           importedFolderIds,
         })
@@ -178,6 +181,7 @@ async function cleanupStagedMedia(stagedMedia: StagedArchiveMedia): Promise<void
 export async function importStagedArchiveMediaEntries(input: {
   stagedMedia: StagedArchiveMedia
   db: DbClient
+  siteId: string
   uploadsDir: string
   importedFolderIds: Set<string>
 }): Promise<number> {
@@ -207,6 +211,7 @@ export async function importStagedArchiveMediaEntries(input: {
 
     await importMediaAsset(input.db, {
       id: asset.id,
+      siteId: input.siteId,
       filename: asset.filename,
       mimeType: asset.mimeType,
       // Use the sanitized byte length — SVG shrinks after script removal.
@@ -227,7 +232,7 @@ export async function importStagedArchiveMediaEntries(input: {
 
     const targetFolders = asset.folderIds.filter((id) => input.importedFolderIds.has(id))
     if (targetFolders.length > 0) {
-      await assignAssetToFolders(input.db, asset.id, { add: targetFolders })
+      await assignAssetToFolders(input.db, input.siteId, asset.id, { add: targetFolders })
     }
     imported++
   }

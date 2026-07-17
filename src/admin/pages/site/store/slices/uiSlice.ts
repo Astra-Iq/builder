@@ -20,9 +20,11 @@ export type FrameworkPanelTab = 'home' | 'colors' | 'typography' | 'spacing'
  *   - `layers` — the current page's DOM tree (DomPanel)
  *   - `site`   — pages, templates, components (SiteExplorerPanel, `site` group)
  *   - `code`   — stylesheets + scripts source files (SiteExplorerPanel, `code` group)
- *   - `media`  — asset library (MediaExplorerPanel)
+ *
+ * The Media asset library is intentionally not an explorer tab — it's reached
+ * through its own workspace instead.
  */
-export type ExplorerPanelTab = 'layers' | 'site' | 'code' | 'media'
+export type ExplorerPanelTab = 'layers' | 'site' | 'code'
 export type PropertiesPanelMode = 'docked' | 'floating'
 
 const PROPERTIES_PANEL_DEFAULT_WIDTH = 360

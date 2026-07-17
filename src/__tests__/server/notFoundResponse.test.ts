@@ -127,14 +127,14 @@ describe('renderNotFoundResponse — Layer B live render', () => {
   it('renders the notFound template with status 404 and caches it', async () => {
     const db = makeFakeDb(makeSnapshot(true))
 
-    const res1 = await renderNotFoundResponse(db, new URL('http://localhost/nowhere'))
+    const res1 = await renderNotFoundResponse(db, 'default', new URL('http://localhost/nowhere'))
     expect(res1?.status).toBe(404)
     const body = await res1!.text()
     expect(body).toContain('This page is missing')
     expect(getStats()).toMatchObject({ hits: 0, misses: 1, size: 1 })
 
     // A different missed URL shares the same reserved /404 cache entry.
-    const res2 = await renderNotFoundResponse(db, new URL('http://localhost/elsewhere'))
+    const res2 = await renderNotFoundResponse(db, 'default', new URL('http://localhost/elsewhere'))
     expect(res2?.status).toBe(404)
     expect(await res2!.text()).toBe(body)
     expect(getStats()).toMatchObject({ hits: 1, misses: 1, size: 1 })
@@ -142,13 +142,13 @@ describe('renderNotFoundResponse — Layer B live render', () => {
 
   it('returns null — and caches nothing — when the site has no notFound template', async () => {
     const db = makeFakeDb(makeSnapshot(false))
-    expect(await renderNotFoundResponse(db, new URL('http://localhost/nowhere'))).toBeNull()
+    expect(await renderNotFoundResponse(db, 'default', new URL('http://localhost/nowhere'))).toBeNull()
     expect(getStats()).toMatchObject({ hits: 0, misses: 0, size: 0 })
   })
 
   it('returns null when nothing is published at all', async () => {
     const db = makeFakeDb(null)
-    expect(await renderNotFoundResponse(db, new URL('http://localhost/nowhere'))).toBeNull()
+    expect(await renderNotFoundResponse(db, 'default', new URL('http://localhost/nowhere'))).toBeNull()
   })
 })
 
@@ -157,10 +157,10 @@ describe('renderNotFoundResponse — Layer A baked artefact', () => {
 
   beforeEach(async () => {
     uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-404-'))
-    const slotDir = join(uploadsDir, 'published', 'a')
+    const slotDir = join(uploadsDir, 'published', 'default', 'a')
     await mkdir(slotDir, { recursive: true })
     await writeFile(join(slotDir, '404.html'), '<!DOCTYPE html><h1>baked 404</h1>', 'utf-8')
-    await symlink('a', join(uploadsDir, 'published', 'current'))
+    await symlink('a', join(uploadsDir, 'published', 'default', 'current'))
   })
 
   afterEach(async () => {
@@ -173,16 +173,16 @@ describe('renderNotFoundResponse — Layer A baked artefact', () => {
       throw new Error('DB must not be queried on the Layer A path')
     }) as unknown as DbClient
 
-    const res = await renderNotFoundResponse(explodingDb, new URL('http://localhost/nope'), uploadsDir)
+    const res = await renderNotFoundResponse(explodingDb, 'default', new URL('http://localhost/nope'), uploadsDir)
     expect(res?.status).toBe(404)
     expect(await res!.text()).toContain('baked 404')
     expect(res?.headers.get('content-type')).toContain('text/html')
   })
 
   it('falls through to the live render when the artefact is missing', async () => {
-    await rm(join(uploadsDir, 'published', 'a', '404.html'))
+    await rm(join(uploadsDir, 'published', 'default', 'a', '404.html'))
     const db = makeFakeDb(makeSnapshot(true))
-    const res = await renderNotFoundResponse(db, new URL('http://localhost/nope'), uploadsDir)
+    const res = await renderNotFoundResponse(db, 'default', new URL('http://localhost/nope'), uploadsDir)
     expect(res?.status).toBe(404)
     expect(await res!.text()).toContain('This page is missing')
   })

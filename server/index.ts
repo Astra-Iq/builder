@@ -11,10 +11,13 @@ await import('./richtextSanitizer')
 const { handleServerRequest } = await import('./router')
 const { activateInstalledServerPlugins } = await import('./plugins/runtime')
 const { mediaStorageRegistry } = await import('@core/plugins/mediaStorageRegistry')
+const { publishStorageRegistry } = await import('./publish/publishStorageRegistry')
 
 const config = readServerConfig()
 configureTrustedProxyCidrs(config.trustedProxyCidrs)
 configurePublicOrigins(config.publicOrigins)
+const { configurePublicBaseDomain } = await import('./publish/requestSite')
+configurePublicBaseDomain(config.publicBaseDomain)
 const { db, migrations } = createDbClient(config.databaseUrl)
 await runMigrations(db, migrations)
 // System role sync runs after migrations on every boot — the Owner row's
@@ -30,6 +33,23 @@ await ensureBootstrapSite(db)
 // plugin adapters register through the same registry but local-disk is
 // always the fallback for unset roles. See `mediaStorageRegistry.ts`.
 mediaStorageRegistry.configureLocalDisk({ uploadsDir: config.uploadsDir })
+// Wire the built-in local-disk publish adapter (no-op push — baked artefacts
+// already live on local disk). Plugins register remote object-storage adapters
+// (S3/R2) through the same registry. See `publishStorageRegistry.ts`.
+publishStorageRegistry.configureLocalDisk()
+// Election by env presence: when PUBLISH_STORAGE_* is set, register the
+// first-party S3/R2 adapter so every publish pushes baked output to the bucket.
+if (config.publishStorage) {
+  const { createS3PublishAdapter } = await import('./publish/s3PublishStorage')
+  publishStorageRegistry.register(createS3PublishAdapter(config.publishStorage))
+}
+// Edge host-map sync: when PUBLISH_KV_* is set, each publish upserts
+// host → siteId into the Cloudflare KV namespace the edge Worker reads.
+if (config.cloudflareKv) {
+  const { createCloudflareKvClient } = await import('./publish/cloudflareKv')
+  const { configureEdgeHostMap } = await import('./publish/edgeHostMap')
+  configureEdgeHostMap(createCloudflareKvClient(config.cloudflareKv))
+}
 await activateInstalledServerPlugins(db, config.uploadsDir)
 // AI runtime: start the nightly conversation-purge tick. Operators add
 // their own provider credentials via /admin/ai/providers on first install.

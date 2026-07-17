@@ -147,13 +147,13 @@ function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
  * `pages` and `components` data rows. Returns `null` when no draft site
  * exists yet. Saved layouts are editor-only; publishing ignores them.
  */
-export async function getDraftSiteDocument(db: DbClient): Promise<SiteDocument | null> {
-  const shell = await getDraftSite(db)
+export async function getDraftSiteDocument(db: DbClient, siteId: string): Promise<SiteDocument | null> {
+  const shell = await getDraftSite(db, siteId)
   if (!shell) return null
 
   const [pageRows, vcRows] = await Promise.all([
-    listDataRows(db, 'pages'),
-    listDataRows(db, 'components'),
+    listDataRows(db, siteId, 'pages'),
+    listDataRows(db, siteId, 'components'),
   ])
   const visualComponents = validateVisualComponents(
     vcRows.flatMap((r) => { const vc = visualComponentFromRow(r); return vc ? [vc] : [] })
@@ -166,8 +166,8 @@ export async function getDraftSiteDocument(db: DbClient): Promise<SiteDocument |
   }
 }
 
-export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishStatus> {
-  const draftSite = await getDraftSiteDocument(db)
+export async function getDraftPublishStatus(db: DbClient, siteId: string): Promise<DraftPublishStatus> {
+  const draftSite = await getDraftSiteDocument(db, siteId)
   if (!draftSite) {
     return {
       hasPublishedVersion: false,

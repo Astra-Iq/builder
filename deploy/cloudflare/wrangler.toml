@@ -1,0 +1,25 @@
+# Cloudflare Worker that serves per-merchant published sites from R2.
+# Deploy with:  wrangler deploy   (from this directory)
+#
+# Fill in the placeholders below, then wire the same bucket + KV namespace the
+# app is configured with (PUBLISH_STORAGE_* / PUBLISH_KV_*).
+
+name = "instatic-edge"
+main = "worker.ts"
+compatibility_date = "2024-11-01"
+
+# Route every merchant subdomain (and any custom hostnames added to the zone)
+# through the Worker. Replace shopzoon.app with your PUBLIC_BASE_DOMAIN zone.
+# Custom domains are added as Cloudflare-for-SaaS custom hostnames on this zone.
+routes = [{ pattern = "*.shopzoon.app/*", zone_name = "shopzoon.app" }]
+
+# R2 bucket the app publishes into (PUBLISH_STORAGE_BUCKET).
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "published-sites"
+
+# KV namespace of host → siteId the app keeps in sync (PUBLISH_KV_NAMESPACE_ID).
+# Create it with:  wrangler kv namespace create SITE_MAP
+[[kv_namespaces]]
+binding = "SITE_MAP"
+id = "159278d40994493594b9a92d54a89257"

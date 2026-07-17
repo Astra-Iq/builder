@@ -34,6 +34,7 @@ import { collectClassCSS, sanitizeModuleCSS } from './cssCollector'
 import { collectUserStylesheetCss } from './userStylesheets'
 import { PUBLISHER_RESET_CSS } from './reset'
 import { buildSiteFrameworkCss } from './frameworkCss'
+import { buildGoogleFontsLinkTags } from '@core/fonts'
 import type { SiteCssBundle } from './siteCssBundle'
 import { escapeHtml, isSafeUrl } from './utils'
 import { addCspSources, createBaseCspPlan, cspMetaTag } from './cspPlan'
@@ -412,8 +413,13 @@ function buildContentSecurityPolicy(
   anyScriptTag: boolean,
   importmap: PublishedRuntimePackageImportmap | undefined,
   moduleCspSources: ReadonlyMap<string, ReadonlySet<string>>,
+  hasGoogleFonts: boolean,
 ): string {
-  const plan = createBaseCspPlan({ anyScriptTag, importmapSha: importmap?.sha256 })
+  const plan = createBaseCspPlan({
+    anyScriptTag,
+    importmapSha: importmap?.sha256,
+    hasGoogleFonts,
+  })
   // Merge per-page CSP requirements declared by module render() outputs.
   // addCspSources automatically drops the lone 'none' when real sources are
   // added, so frame-src 'none' becomes frame-src <origins> on pages that
@@ -440,6 +446,8 @@ interface AssembledDocumentParts {
   pageTitle: string
   metaDesc: string
   favicon: string
+  /** `<link>` tags loading Google fonts from the CSS2 CDN, or empty string. */
+  fontLinks: string
   styleHeadHtml: string
   importmapTag: string
   headRuntimeScripts: string
@@ -459,6 +467,7 @@ function assembleHtmlDocument(parts: AssembledDocumentParts): string {
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
     `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}\n` +
+    lineOrEmpty(parts.fontLinks) +
     parts.styleHeadHtml +
     lineOrEmpty(parts.importmapTag) +
     lineOrEmpty(parts.headRuntimeScripts) +
@@ -557,7 +566,15 @@ export function publishPage(
 
   const meta = buildDocumentMetaTags(site, page)
   const runtime = buildRuntimeAssetsBlock(options, acc)
-  const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
+  // Google fonts load from the CSS2 CDN via `<link>` tags (not self-hosted), so
+  // the CSP must allow the googleapis stylesheet + the gstatic font binaries.
+  const fontLinks = buildGoogleFontsLinkTags(site.settings.fonts)
+  const csp = buildContentSecurityPolicy(
+    runtime.anyScriptTag,
+    runtime.importmap,
+    acc.cspSources,
+    fontLinks.length > 0,
+  )
 
   const html = assembleHtmlDocument({
     langAttr: meta.langAttr,
@@ -565,6 +582,7 @@ export function publishPage(
     pageTitle: meta.pageTitle,
     metaDesc: meta.metaDesc,
     favicon: meta.favicon,
+    fontLinks,
     styleHeadHtml,
     importmapTag: runtime.importmapTag,
     headRuntimeScripts: runtime.headRuntimeScripts,

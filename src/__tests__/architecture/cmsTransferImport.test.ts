@@ -20,7 +20,8 @@ import { createSqliteClient } from '../../../server/db/sqlite'
 import { runMigrations } from '../../../server/db/runMigrations'
 import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import { saveDraftSite, getDraftSite } from '../../../server/repositories/site'
-import { createUser } from '../../../server/repositories/users'
+import { createSite } from '../../../server/repositories/setup'
+import { seedUser } from '../helpers/seedUser'
 import { createSession } from '../../../server/auth/sessions'
 import {
   createSessionToken,
@@ -72,17 +73,17 @@ const BUNDLE_SHELL: SiteShell = {
 // ---------------------------------------------------------------------------
 
 async function seedAuth(db: DbClient): Promise<string> {
-  await saveDraftSite(db, TEST_SHELL)
-  await createUser(db, {
+  await createSite(db, 'Test Site', {})
+  await saveDraftSite(db, 'default', TEST_SHELL)
+  await seedUser(db, {
     id: 'test-owner',
     email: 'owner@import.test',
     displayName: 'Test Owner',
-    passwordHash: 'placeholder-hash',
     roleId: 'owner',
-    allowOwnerRole: true,
   })
   const token = createSessionToken()
   await createSession(db, {
+    currentSiteId: 'default',
     idHash: await hashSessionToken(token),
     userId: 'test-owner',
     expiresAt: sessionExpiry(),
@@ -185,12 +186,12 @@ describe('handleImportRoute — strategy: replace', () => {
 
     // Seed 2 local posts: one that OVERLAPS with the bundle (overlapId),
     // one that is LOCAL-ONLY (localOnlyId — should be deleted by replace)
-    const overlap = await createDataRow(db, {
+    const overlap = await createDataRow(db, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Local Overlap', slug: 'overlap' },
       slug: 'overlap',
     })
-    const localOnly = await createDataRow(db, {
+    const localOnly = await createDataRow(db, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Local Only', slug: 'local-only' },
       slug: 'local-only',
@@ -230,13 +231,13 @@ describe('handleImportRoute — strategy: replace', () => {
   })
 
   test('local-only row is GONE after replace', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const ids = allRows.map((r) => r.id)
     expect(ids).not.toContain(localOnlyId)
   })
 
   test('bundle rows are present in the DB', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const ids = allRows.map((r) => r.id)
     expect(ids).toContain(overlapId)
     expect(ids).toContain('bundle-new-a')
@@ -244,14 +245,14 @@ describe('handleImportRoute — strategy: replace', () => {
   })
 
   test('overlap row has bundle cells after replace', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const overlap = allRows.find((r) => r.id === overlapId)
     expect(overlap).toBeDefined()
     expect(overlap!.cells['title']).toBe('Bundle Overlap')
   })
 
   test('site shell is overwritten from the bundle', async () => {
-    const shell = await getDraftSite(db)
+    const shell = await getDraftSite(db, 'default')
     expect(shell).not.toBeNull()
     expect(shell!.name).toBe('Bundle Site Name')
   })
@@ -272,12 +273,12 @@ describe('handleImportRoute — strategy: merge-add', () => {
     await runMigrations(db, sqliteMigrations)
     cookie = await seedAuth(db)
 
-    const overlap = await createDataRow(db, {
+    const overlap = await createDataRow(db, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Local Overlap', slug: 'overlap' },
       slug: 'overlap',
     })
-    const localOnly = await createDataRow(db, {
+    const localOnly = await createDataRow(db, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Local Only', slug: 'local-only' },
       slug: 'local-only',
@@ -314,20 +315,20 @@ describe('handleImportRoute — strategy: merge-add', () => {
   })
 
   test('local-only row is still present after merge-add (untouched)', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const ids = allRows.map((r) => r.id)
     expect(ids).toContain(localOnlyId)
   })
 
   test('new bundle rows are added', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const ids = allRows.map((r) => r.id)
     expect(ids).toContain('merge-add-new-a')
     expect(ids).toContain('merge-add-new-b')
   })
 
   test('overlapping row cells are NOT overwritten (local version preserved)', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const overlap = allRows.find((r) => r.id === overlapId)
     expect(overlap).toBeDefined()
     // Local version kept — bundle version skipped
@@ -335,7 +336,7 @@ describe('handleImportRoute — strategy: merge-add', () => {
   })
 
   test('site shell is NOT overwritten by merge-add', async () => {
-    const shell = await getDraftSite(db)
+    const shell = await getDraftSite(db, 'default')
     expect(shell).not.toBeNull()
     // Local shell name, not the bundle's shell name
     expect(shell!.name).toBe('Import Test Site')
@@ -357,12 +358,12 @@ describe('handleImportRoute — strategy: merge-overwrite', () => {
     await runMigrations(db, sqliteMigrations)
     cookie = await seedAuth(db)
 
-    const overlap = await createDataRow(db, {
+    const overlap = await createDataRow(db, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Local Overlap', slug: 'overlap' },
       slug: 'overlap',
     })
-    const localOnly = await createDataRow(db, {
+    const localOnly = await createDataRow(db, { siteId: 'default',
       tableId: 'posts',
       cells: { title: 'Local Only', slug: 'local-only' },
       slug: 'local-only',
@@ -399,20 +400,20 @@ describe('handleImportRoute — strategy: merge-overwrite', () => {
   })
 
   test('local-only row is still present after merge-overwrite (untouched)', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const ids = allRows.map((r) => r.id)
     expect(ids).toContain(localOnlyId)
   })
 
   test('new bundle rows are added', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const ids = allRows.map((r) => r.id)
     expect(ids).toContain('mo-new-a')
     expect(ids).toContain('mo-new-b')
   })
 
   test('overlapping row cells ARE overwritten (bundle version wins)', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const overlap = allRows.find((r) => r.id === overlapId)
     expect(overlap).toBeDefined()
     // Bundle version now present
@@ -420,14 +421,14 @@ describe('handleImportRoute — strategy: merge-overwrite', () => {
   })
 
   test('local-only row cells are unchanged after merge-overwrite', async () => {
-    const allRows = await listDataRows(db, 'posts')
+    const allRows = await listDataRows(db, 'default', 'posts')
     const localOnly = allRows.find((r) => r.id === localOnlyId)
     expect(localOnly).toBeDefined()
     expect(localOnly!.cells['title']).toBe('Local Only')
   })
 
   test('site shell IS overwritten by merge-overwrite when bundle has one', async () => {
-    const shell = await getDraftSite(db)
+    const shell = await getDraftSite(db, 'default')
     expect(shell).not.toBeNull()
     expect(shell!.name).toBe('Bundle Site Name')
   })

@@ -323,26 +323,26 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     const db = buildFakeDb(staticPage, dynamicPage)
 
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    const result = await publishDraftSite(db, 'user-1', uploadsDir)
+    const result = await publishDraftSite(db, 'default', 'user-1', uploadsDir)
 
     expect(result.publishedPages).toBe(2)
 
     // Static page artefact exists
-    const staticHtml = await readArtefact(uploadsDir, '/about')
+    const staticHtml = await readArtefact(uploadsDir, 'default', '/about')
     expect(staticHtml).not.toBeNull()
     expect(staticHtml).toContain('Hello static world')
 
     // Dynamic page is ALSO baked — as a static SHELL with a <instatic-hole>
     // placeholder for the request-dependent loop. Everything except the hole
     // fragment is on disk; the hole runtime hydrates the loop at request time.
-    const dynamicHtml = await readArtefact(uploadsDir, '/news')
+    const dynamicHtml = await readArtefact(uploadsDir, 'default', '/news')
     expect(dynamicHtml).not.toBeNull()
     expect(dynamicHtml).toContain('<instatic-hole')
     expect(dynamicHtml).toContain('/_instatic/hole-runtime.js')
     // The loop's items are NOT inlined — they come from the hole fetch.
 
     // Symlink exists and points to a slot
-    const activeSlot = await getActiveSlot(uploadsDir)
+    const activeSlot = await getActiveSlot(uploadsDir, 'default')
     expect(['a', 'b']).toContain(activeSlot)
 
     // Complete static publishing: the CSS bundles the page links must be
@@ -350,7 +350,7 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     const cssHrefs = [...(staticHtml ?? '').matchAll(/href="(\/_instatic\/css\/[^"]+\.css)"/g)].map((m) => m[1])
     expect(cssHrefs.length).toBeGreaterThan(0) // reset + framework at minimum
     for (const href of cssHrefs) {
-      const bytes = await readStaticAsset(uploadsDir, href)
+      const bytes = await readStaticAsset(uploadsDir, 'default', href)
       expect(bytes).not.toBeNull()
       expect(bytes!.byteLength).toBeGreaterThan(0)
     }
@@ -390,11 +390,11 @@ describe('publishDraftSite — Layer A static artefacts', () => {
 
     const db = buildFakeDb(page, dynamicPage)
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
-    const result = await publishDraftSite(db, 'user-1')  // no uploadsDir
+    const result = await publishDraftSite(db, 'default', 'user-1')  // no uploadsDir
 
     expect(result.publishedPages).toBe(2)
     // No symlink should exist
-    const artefact = await readArtefact(uploadsDir, '/no-uploads')
+    const artefact = await readArtefact(uploadsDir, 'default', '/no-uploads')
     expect(artefact).toBeNull()
   })
 
@@ -418,26 +418,26 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     const { publishDraftSite } = await import('../../../server/publish/publishSite')
 
     // First publish: writes to inactive slot (b), flips current → b
-    await publishDraftSite(db, 'user-1', uploadsDir)
-    const slotAfterFirst = await getActiveSlot(uploadsDir)
+    await publishDraftSite(db, 'default', 'user-1', uploadsDir)
+    const slotAfterFirst = await getActiveSlot(uploadsDir, 'default')
 
     // The other slot directory should still exist on disk (not wiped until next publish)
     const otherSlot = slotAfterFirst === 'a' ? 'b' : 'a'
     // The inactive slot from the perspective of "before the first publish" is
     // the one the publish just wrote into — the OLD slot is what was active before.
     // On a brand-new uploadsDir there's no old slot, so just verify the active one has content.
-    const html = await readArtefact(uploadsDir, '/flip')
+    const html = await readArtefact(uploadsDir, 'default', '/flip')
     expect(html).toContain('First publish')
 
     // Second publish: writes to inactive slot (the other one), flips current
-    await publishDraftSite(db, 'user-1', uploadsDir)
-    const slotAfterSecond = await getActiveSlot(uploadsDir)
+    await publishDraftSite(db, 'default', 'user-1', uploadsDir)
+    const slotAfterSecond = await getActiveSlot(uploadsDir, 'default')
 
     // Slots must have rotated
     expect(slotAfterSecond).not.toBe(slotAfterFirst)
 
     // Content is still readable after the flip
-    const htmlAfter = await readArtefact(uploadsDir, '/flip')
+    const htmlAfter = await readArtefact(uploadsDir, 'default', '/flip')
     expect(htmlAfter).toContain('First publish')
   })
 })
@@ -456,9 +456,9 @@ describe('publicRouter — Layer A disk fast-path', () => {
   it('serves a baked artefact without DB snapshot lookup when URL has no query string', async () => {
     // Pre-bake an artefact
     const { prepareInactiveSlot, writeArtefact, swapSlot } = await import('../../../server/publish/staticArtefact')
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/about', '<html><body><h1>Baked about page</h1></body></html>')
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     // Fake DB that throws on any snapshot lookup — proves we never hit it
     let snapshotLookupCalled = false
@@ -503,11 +503,11 @@ describe('publicRouter — Layer A disk fast-path', () => {
       `<script type="module" src="${jsPath}"></script>` +
       `</body></html>`
 
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/about', html)
     await writeStaticAsset(slotDir, cssPath, enc.encode('body{margin:0}'))
     await writeStaticAsset(slotDir, jsPath, enc.encode('console.log("hi")'))
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     // A DB that throws on ANY query — the only way the three requests below can
     // succeed is if NOTHING touches the database.
@@ -553,10 +553,10 @@ describe('publicRouter — Layer A disk fast-path', () => {
       `<instatic-hole id="hole-loop1" data-instatic-hole="loop1" data-instatic-version="3" style="display:contents"></instatic-hole>` +
       `</body></html>`
 
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/blog', shell)
     await writeStaticAsset(slotDir, cssPath, new TextEncoder().encode('h1{color:#000}'))
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     let dbQueried = false
     const throwingDb = createFakeDb(async (sql: string): Promise<DbResult> => {
@@ -584,9 +584,9 @@ describe('publicRouter — Layer A disk fast-path', () => {
   it('falls through to the live renderer when URL has a render-affecting (loop pagination) query', async () => {
     // Pre-bake an artefact for /about
     const { prepareInactiveSlot, writeArtefact, swapSlot } = await import('../../../server/publish/staticArtefact')
-    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+    const { slot, slotDir } = await prepareInactiveSlot(uploadsDir, 'default')
     await writeArtefact(slotDir, '/about', '<html><body><h1>Baked about page</h1></body></html>')
-    await swapSlot(uploadsDir, slot)
+    await swapSlot(uploadsDir, 'default', slot)
 
     // A loop-pagination query affects the render, so it must bypass the disk
     // path (junk queries instead serve the baked artefact — ISS-032)

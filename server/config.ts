@@ -1,3 +1,6 @@
+import type { S3PublishConfig } from './publish/s3PublishStorage'
+import type { CloudflareKvConfig } from './publish/cloudflareKv'
+
 interface ServerConfig {
   port: number
   databaseUrl: string
@@ -5,6 +8,56 @@ interface ServerConfig {
   staticDir: string
   trustedProxyCidrs: string[]
   publicOrigins: string[]
+  /**
+   * Apex domain merchant subdomains hang off (`<slug>.<PUBLIC_BASE_DOMAIN>`) for
+   * the Host→site serving resolver. `null` disables subdomain matching.
+   */
+  publicBaseDomain: string | null
+  /**
+   * S3/R2 bucket the publish pipeline pushes baked output to. `null` when
+   * `PUBLISH_STORAGE_*` is unset — the push stays a local-disk no-op.
+   */
+  publishStorage: S3PublishConfig | null
+  /**
+   * Cloudflare KV namespace the publish pipeline syncs `host → siteId` into so
+   * the edge Worker can serve per-merchant. `null` when `PUBLISH_KV_*` is unset.
+   */
+  cloudflareKv: CloudflareKvConfig | null
+}
+
+/**
+ * Read the Cloudflare KV config used to sync the edge host→siteId map. All of
+ * account id / namespace id / API token must be present to enable it.
+ */
+function readCloudflareKv(
+  env: Record<string, string | undefined>,
+): CloudflareKvConfig | null {
+  const accountId = env.PUBLISH_KV_ACCOUNT_ID?.trim()
+  const namespaceId = env.PUBLISH_KV_NAMESPACE_ID?.trim()
+  const apiToken = env.PUBLISH_KV_API_TOKEN?.trim()
+  if (!accountId || !namespaceId || !apiToken) return null
+  return { accountId, namespaceId, apiToken }
+}
+
+/**
+ * Read the S3/R2 publish-storage config. All of endpoint/bucket/access key/secret
+ * must be present to enable it; region defaults to `auto` (the R2 convention).
+ */
+function readPublishStorage(
+  env: Record<string, string | undefined>,
+): S3PublishConfig | null {
+  const endpoint = env.PUBLISH_STORAGE_ENDPOINT?.trim()
+  const bucket = env.PUBLISH_STORAGE_BUCKET?.trim()
+  const accessKeyId = env.PUBLISH_STORAGE_ACCESS_KEY_ID?.trim()
+  const secretAccessKey = env.PUBLISH_STORAGE_SECRET_ACCESS_KEY?.trim()
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) return null
+  return {
+    endpoint,
+    region: env.PUBLISH_STORAGE_REGION?.trim() || 'auto',
+    bucket,
+    accessKeyId,
+    secretAccessKey,
+  }
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -88,5 +141,8 @@ export function readServerConfig(
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
+    publicBaseDomain: env.PUBLIC_BASE_DOMAIN?.trim().toLowerCase() || null,
+    publishStorage: readPublishStorage(env),
+    cloudflareKv: readCloudflareKv(env),
   }
 }

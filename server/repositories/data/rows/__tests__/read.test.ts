@@ -15,9 +15,9 @@ async function freshDb(): Promise<DbClient> {
 
 async function seedRow(db: DbClient, id: string): Promise<void> {
   await db`
-    insert into data_rows (id, table_id, cells_json, slug, status, created_at, updated_at)
+    insert into data_rows (id, site_id, table_id, cells_json, slug, status, created_at, updated_at)
     values (
-      ${id}, ${'posts'}, ${{ title: id, slug: id }}, ${id}, ${'draft'},
+      ${id}, ${'default'}, ${'posts'}, ${{ title: id, slug: id }}, ${id}, ${'draft'},
       ${'2024-01-01T00:00:00.000Z'}, ${'2024-01-01T00:00:00.000Z'}
     )
   `
@@ -57,10 +57,10 @@ describe('countDataRows', () => {
     const db = await freshDb()
     await seedRow(db, 'post-1')
     await seedRow(db, 'post-2')
-    expect(await countDataRows(db, 'posts')).toBe(2)
+    expect(await countDataRows(db, 'default', 'posts')).toBe(2)
     await softDeleteDataRow(db, 'post-1')
-    expect(await countDataRows(db, 'posts')).toBe(1)
-    expect(await countDataRows(db, 'pages')).toBe(0)
+    expect(await countDataRows(db, 'default', 'posts')).toBe(1)
+    expect(await countDataRows(db, 'default', 'pages')).toBe(0)
   })
 })
 

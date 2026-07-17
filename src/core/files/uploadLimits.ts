@@ -1,5 +1,5 @@
 /**
- * Files Data Layer — upload helpers.
+ * Files Data Layer — upload size-limit helpers.
  *
  * Architecture source: Contribution #613 §A.1 (Amendment to Contribution #595)
  * Task #431 — Gate 10

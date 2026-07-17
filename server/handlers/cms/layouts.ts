@@ -27,7 +27,9 @@ export async function handleLayoutsRoutes(req: Request, db: DbClient): Promise<R
 
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
+  const siteId = user.currentSiteId
+  if (!siteId) return jsonResponse({ error: 'No site selected' }, { status: 409 })
 
-  const rows = await listDataRows(db, 'layouts')
+  const rows = await listDataRows(db, siteId, 'layouts')
   return jsonResponse({ rows })
 }

@@ -108,6 +108,9 @@ async function mintSession(db: DbClient, userId: string): Promise<string> {
     expiresAt: sessionExpiry(),
     ipAddress: null,
     userAgent: null,
+    // The editor handlers resolve the tenant from the session's current site;
+    // harness users edit the bootstrap 'default' site.
+    currentSiteId: 'default',
   })
   return `${SESSION_COOKIE_NAME}=${token}`
 }

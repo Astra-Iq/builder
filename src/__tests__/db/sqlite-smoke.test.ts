@@ -5,11 +5,11 @@ describe('SQLite adapter smoke test', () => {
   test('site → data_row draft round-trip with JSON columns', async () => {
     const { db, cleanup } = await createTestDb()
     try {
-      // ── 1. Insert the singleton site row ────────────────────────────────────
-      // The schema enforces id = 'default' via a CHECK constraint; no other id
-      // is permitted.
+      // ── 1. Insert the adopted-install site row ──────────────────────────────
+      // The `sites` registry is keyed by id; the adopted single install uses
+      // id = 'default'.
       await db`
-        insert into site (id, name, settings_json)
+        insert into sites (id, name, settings_json)
         values ('default', ${'Test Site'}, ${{}})`
 
       // ── 2. Insert a data_row with a JSON column, capture id via RETURNING ───
@@ -41,14 +41,14 @@ describe('SQLite adapter smoke test', () => {
 
       // ── 4. ON CONFLICT DO UPDATE + current_timestamp ─────────────────────────
       await db`
-        insert into site (id, name, settings_json)
+        insert into sites (id, name, settings_json)
         values ('default', ${'Updated Site'}, ${{}}  )
         on conflict (id) do update set
           name       = excluded.name,
           updated_at = current_timestamp`
 
       const { rows: siteRows } = await db<{ name: string; updated_at: string }>`
-        select name, updated_at from site where id = 'default'`
+        select name, updated_at from sites where id = 'default'`
 
       expect(siteRows).toHaveLength(1)
       expect(siteRows[0]!.name).toBe('Updated Site')

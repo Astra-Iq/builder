@@ -20,6 +20,15 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose'
 import { createHash, randomBytes } from 'node:crypto'
 
+const REQUIRED_LOGTO_SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'roles',
+  'urn:logto:scope:organizations',
+  'urn:logto:scope:organization_roles',
+] as const
+
 export interface LogtoConfig {
   issuer: string
   authorizationEndpoint: string
@@ -33,6 +42,12 @@ export interface LogtoConfig {
   /** Absolute URL Logto returns to after RP-initiated logout. */
   postLogoutRedirectUri: string
   scopes: string
+}
+
+function normalizeScopes(value: string | undefined): string {
+  const scopes = new Set(value?.trim().split(/\s+/).filter(Boolean) ?? [])
+  for (const scope of REQUIRED_LOGTO_SCOPES) scopes.add(scope)
+  return [...scopes].join(' ')
 }
 
 /**
@@ -68,7 +83,7 @@ export function readLogtoConfig(
     appSecret,
     redirectUri,
     postLogoutRedirectUri,
-    scopes: env.LOGTO_SCOPES?.trim() || 'openid profile email roles',
+    scopes: normalizeScopes(env.LOGTO_SCOPES),
   }
 }
 
@@ -205,4 +220,24 @@ export async function verifyIdToken(
     throw new OidcError('ID token nonce mismatch')
   }
   return payload
+}
+
+/**
+ * Fetch the OIDC userinfo document (`${issuer}/me`) with the access token.
+ * Logto serves the organization membership + org-role claims here (they are not
+ * reliably present in the ID token), so the callback reads roles/orgs from this
+ * response. Throws `OidcError` on a non-2xx response.
+ */
+export async function fetchUserinfo(
+  config: LogtoConfig,
+  accessToken: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Record<string, unknown>> {
+  const res = await fetchImpl(`${config.issuer}/me`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  })
+  if (!res.ok) {
+    throw new OidcError(`Userinfo request failed (${res.status})`)
+  }
+  return (await res.json()) as Record<string, unknown>
 }

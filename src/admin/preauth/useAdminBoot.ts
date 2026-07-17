@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   getCmsPublicSite,
-  getCurrentCmsUser,
+  getCurrentCmsSession,
   type CmsCurrentUser,
   type CmsPublicSite,
+  type CmsAvailableSite,
 } from '@core/persistence/auth'
+import { useAdminUi } from '@admin/state/adminUi'
 
 /**
  * The admin app authenticates through Logto (the builder is the OIDC client).
@@ -42,11 +44,24 @@ function redirectToLogin(): void {
   if (typeof window !== 'undefined') window.location.assign(LOGIN_URL)
 }
 
-export type AdminBootStatus = 'loading' | 'authenticated' | 'unauthenticated'
+/**
+ * Boot outcomes:
+ *   - `authenticated`  — signed in with a current site → render the editor.
+ *   - `needs-site`     — signed in, member of 2+ sites, none chosen → org picker.
+ *   - `no-access`      — signed in but not an Owner/Admin of any org → denial.
+ *   - `unauthenticated`— no session; the browser is redirected to Logto.
+ */
+export type AdminBootStatus =
+  | 'loading'
+  | 'authenticated'
+  | 'needs-site'
+  | 'no-access'
+  | 'unauthenticated'
 
 interface AdminBootResult {
   status: AdminBootStatus
   currentUser: CmsCurrentUser | null
+  availableSites: CmsAvailableSite[]
   publicSite: CmsPublicSite
 }
 
@@ -55,6 +70,7 @@ const DEFAULT_PUBLIC_SITE: CmsPublicSite = { name: null, faviconUrl: null }
 export function useAdminBoot(): AdminBootResult {
   const [status, setStatus] = useState<AdminBootStatus>('loading')
   const [currentUser, setCurrentUser] = useState<CmsCurrentUser | null>(null)
+  const [availableSites, setAvailableSites] = useState<CmsAvailableSite[]>([])
   const [publicSite, setPublicSite] = useState<CmsPublicSite>(DEFAULT_PUBLIC_SITE)
 
   useEffect(() => {
@@ -68,29 +84,26 @@ export function useAdminBoot(): AdminBootResult {
     })
 
     async function resolveAuth(): Promise<void> {
+      // The full session carries the multi-tenant context (which sites the user
+      // may edit, and which one is active) that decides editor vs picker vs
+      // denial — so we read it directly rather than the identity-only preflight.
       try {
-        const mePromise: Promise<{ ok: true; user: CmsCurrentUser } | { ok: false }> =
-          preflighted?.me
-            ?? getCurrentCmsUser().then(
-              (user) => ({ ok: true as const, user }),
-              () => ({ ok: false as const }),
-            )
-        const result = await mePromise
+        const session = await getCurrentCmsSession()
         if (cancelled) return
-
-        // flushSync — force the boot commit synchronous so the editor paints on
-        // the frame the /me promise resolves rather than sitting behind the
-        // concurrent scheduler for 200–300ms. Subsequent transitions still flow
-        // through the concurrent scheduler; only this initial commit is forced.
-        if (result.ok) {
-          flushSync(() => {
-            setCurrentUser(result.user)
-            setStatus('authenticated')
-          })
-        } else {
-          flushSync(() => setStatus('unauthenticated'))
-          redirectToLogin()
-        }
+        // The current site's public origin feeds the "Open live page" button on
+        // every admin route; a site switch reloads the page, so this single
+        // boot-time write keeps adminUi in step with the session.
+        useAdminUi.getState().setSiteLiveOrigin(session.currentSite?.liveOrigin ?? null)
+        // flushSync — force the initial boot commit synchronous so the resolved
+        // screen paints on the frame /me settles rather than waiting on the
+        // concurrent scheduler. Only this first commit is forced.
+        flushSync(() => {
+          setCurrentUser(session.user)
+          setAvailableSites(session.availableSites)
+          if (session.currentSite) setStatus('authenticated')
+          else if (session.availableSites.length > 0) setStatus('needs-site')
+          else setStatus('no-access')
+        })
       } catch {
         if (cancelled) return
         flushSync(() => setStatus('unauthenticated'))
@@ -102,5 +115,5 @@ export function useAdminBoot(): AdminBootResult {
     return () => { cancelled = true }
   }, [])
 
-  return { status, currentUser, publicSite }
+  return { status, currentUser, availableSites, publicSite }
 }

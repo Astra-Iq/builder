@@ -5,7 +5,7 @@ import { getDraftSite, saveDraftSite } from '../../../server/repositories/site'
 import type { ToolContext } from '../../../server/ai/runtime/types'
 
 async function seedClass(harness: CapabilityTestHarness): Promise<void> {
-  const site = await getDraftSite(harness.db)
+  const site = await getDraftSite(harness.db, 'default')
   if (!site) throw new Error('no default site')
   const now = Date.now()
   site.styleRules['r_testcard'] = {
@@ -19,7 +19,7 @@ async function seedClass(harness: CapabilityTestHarness): Promise<void> {
     createdAt: now,
     updatedAt: now,
   }
-  await saveDraftSite(harness.db, site)
+  await saveDraftSite(harness.db, 'default', site)
 }
 
 function ctxFor(harness: CapabilityTestHarness): ToolContext {
@@ -65,13 +65,13 @@ describe('read_styles (headless design-system read)', () => {
   })
 
   it('summary mode returns a compact catalog (selector + token refs, no declarations)', async () => {
-    const site = await getDraftSite(harness.db)
+    const site = await getDraftSite(harness.db, 'default')
     const now = Date.now()
     site!.styleRules['r_tok'] = {
       id: 'r_tok', name: 'tok-card', kind: 'class', selector: '.tok-card', order: 0,
       styles: { color: 'var(--ist-accent)', padding: '8px' }, contextStyles: {}, createdAt: now, updatedAt: now,
     }
-    await saveDraftSite(harness.db, site!)
+    await saveDraftSite(harness.db, 'default', site!)
     const out = (await readStyles.handler!({ format: 'summary' }, ctxFor(harness))) as {
       classes: Array<{ selector: string; tokens: string[] }>
     }

@@ -85,6 +85,7 @@ export async function cancelScheduledPublish(
  */
 interface DueScheduledRow {
   rowId: string
+  siteId: string
   tableId: string
   scheduledPublishAt: string
 }
@@ -108,10 +109,11 @@ export async function listDuePublishSchedules(
 ): Promise<DueScheduledRow[]> {
   const { rows } = await db<{
     id: string
+    site_id: string
     table_id: string
     scheduled_publish_at: string | Date
   }>`
-    select id, table_id, scheduled_publish_at
+    select id, site_id, table_id, scheduled_publish_at
     from data_rows
     where status = 'scheduled'
       and deleted_at is null
@@ -122,6 +124,7 @@ export async function listDuePublishSchedules(
   `
   return rows.map((row) => ({
     rowId: row.id,
+    siteId: row.site_id,
     tableId: row.table_id,
     scheduledPublishAt: isoDate(row.scheduled_publish_at),
   }))

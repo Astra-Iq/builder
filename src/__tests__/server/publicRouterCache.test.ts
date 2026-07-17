@@ -165,11 +165,11 @@ describe('Layer B render cache integration', () => {
     const db = makeFakeDb(snap)
     const url = new URL('http://localhost/test')
 
-    const res1 = await renderPublicResolution(db, url)
+    const res1 = await renderPublicResolution(db, 'default', url)
     expect(res1?.status).toBe(200)
     expect(getStats()).toMatchObject({ hits: 0, misses: 1, size: 1 })
 
-    const res2 = await renderPublicResolution(db, url)
+    const res2 = await renderPublicResolution(db, 'default', url)
     expect(res2?.status).toBe(200)
     expect(getStats()).toMatchObject({ hits: 1, misses: 1, size: 1 })
   })
@@ -179,10 +179,10 @@ describe('Layer B render cache integration', () => {
     const db = makeFakeDb(snap)
     const url = new URL('http://localhost/test')
 
-    const res1 = await renderPublicResolution(db, url)
+    const res1 = await renderPublicResolution(db, 'default', url)
     const body1 = await res1!.text()
 
-    const res2 = await renderPublicResolution(db, url)
+    const res2 = await renderPublicResolution(db, 'default', url)
     const body2 = await res2!.text()
 
     expect(body1).toBe(body2)
@@ -194,12 +194,12 @@ describe('Layer B render cache integration', () => {
     const db = makeFakeDb(snap)
     const url = new URL('http://localhost/test')
 
-    await renderPublicResolution(db, url)
+    await renderPublicResolution(db, 'default', url)
     expect(getStats()).toMatchObject({ hits: 0, misses: 1 })
 
     bumpPublishVersion()
 
-    await renderPublicResolution(db, url)
+    await renderPublicResolution(db, 'default', url)
     expect(getStats()).toMatchObject({ hits: 0, misses: 2 })
   })
 
@@ -208,10 +208,10 @@ describe('Layer B render cache integration', () => {
     const db = makeFakeDb(snap)
     const url = new URL('http://localhost/test')
 
-    await renderPublicResolution(db, url)
+    await renderPublicResolution(db, 'default', url)
     bumpPublishVersion()
-    await renderPublicResolution(db, url) // re-render after bump
-    await renderPublicResolution(db, url) // should be a hit
+    await renderPublicResolution(db, 'default', url) // re-render after bump
+    await renderPublicResolution(db, 'default', url) // should be a hit
     expect(getStats()).toMatchObject({ hits: 1, misses: 2 })
   })
 
@@ -219,8 +219,8 @@ describe('Layer B render cache integration', () => {
     const snap = makeSnapshot()
     const db = makeFakeDb(snap)
 
-    await renderPublicResolution(db, new URL('http://localhost/test'))
-    await renderPublicResolution(db, new URL('http://localhost/other'))
+    await renderPublicResolution(db, 'default', new URL('http://localhost/test'))
+    await renderPublicResolution(db, 'default', new URL('http://localhost/other'))
     expect(getStats().size).toBe(2)
     expect(getStats().misses).toBe(2)
   })
@@ -232,8 +232,8 @@ describe('Layer B render cache integration', () => {
     // Only loop-pagination params survive query canonicalisation, so they are
     // the only thing that produces distinct cache keys (ISS-032). Junk params
     // would instead collapse onto one key.
-    await renderPublicResolution(db, new URL('http://localhost/test?loop_x_page=1'))
-    await renderPublicResolution(db, new URL('http://localhost/test?loop_x_page=2'))
+    await renderPublicResolution(db, 'default', new URL('http://localhost/test?loop_x_page=1'))
+    await renderPublicResolution(db, 'default', new URL('http://localhost/test?loop_x_page=2'))
     expect(getStats().size).toBe(2)
     expect(getStats().misses).toBe(2)
   })
@@ -242,8 +242,8 @@ describe('Layer B render cache integration', () => {
     const snap = makeSnapshot()
     const db = makeFakeDb(snap)
 
-    await renderPublicResolution(db, new URL('http://localhost/test?utm=a'))
-    await renderPublicResolution(db, new URL('http://localhost/test?utm=b'))
+    await renderPublicResolution(db, 'default', new URL('http://localhost/test?utm=a'))
+    await renderPublicResolution(db, 'default', new URL('http://localhost/test?utm=b'))
     expect(getStats().size).toBe(1)
     expect(getStats().misses).toBe(1)
   })
@@ -253,12 +253,12 @@ describe('Layer B render cache integration', () => {
     // Redirect URL: /posts/old-post → resolved by getDataRowRedirectByRoute
     const url = new URL('http://localhost/posts/old-post')
 
-    const res1 = await renderPublicResolution(db, url)
+    const res1 = await renderPublicResolution(db, 'default', url)
     expect(res1?.status).toBe(301)
     // Cache should be untouched — redirects bypass getOrRender.
     expect(getStats()).toMatchObject({ hits: 0, misses: 0, size: 0 })
 
-    const res2 = await renderPublicResolution(db, url)
+    const res2 = await renderPublicResolution(db, 'default', url)
     expect(res2?.status).toBe(301)
     expect(getStats()).toMatchObject({ hits: 0, misses: 0, size: 0 })
   })
@@ -267,11 +267,11 @@ describe('Layer B render cache integration', () => {
     const db = makeFakeDb(null) // no snapshot → not-found
     const url = new URL('http://localhost/nowhere')
 
-    const res1 = await renderPublicResolution(db, url)
+    const res1 = await renderPublicResolution(db, 'default', url)
     expect(res1).toBeNull()
     expect(getStats()).toMatchObject({ hits: 0, misses: 0, size: 0 })
 
-    const res2 = await renderPublicResolution(db, url)
+    const res2 = await renderPublicResolution(db, 'default', url)
     expect(res2).toBeNull()
     expect(getStats()).toMatchObject({ hits: 0, misses: 0, size: 0 })
   })

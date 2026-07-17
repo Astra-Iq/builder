@@ -2,9 +2,7 @@ import { useSyncExternalStore, type CSSProperties } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { LeftSidebarPanelId } from '@site/store/slices/uiSlice'
 import type { IconComponent } from 'pixel-art-icons/types'
-import { AiSettingsSolidIcon } from 'pixel-art-icons/icons/ai-settings-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
-import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
 import { Button } from '@ui/components/Button'
@@ -53,22 +51,15 @@ const PRIMARY_RAIL_ITEMS: PrimaryRailItem[] = [
     icon: PaintBucketSolidIcon,
     iconName: 'paint-bucket',
   },
-  {
-    id: 'dependencies',
-    label: 'Dependencies',
-    icon: BoxStackSolidIcon,
-    iconName: 'box-stack',
-  },
+  // The Dependencies panel is intentionally hidden from the rail — the
+  // DependenciesPanel + `dependenciesPanelOpen` store state stay intact so
+  // other openers keep working, but merchants get no rail affordance for it.
 ]
 
-const GLOBAL_RAIL_ITEMS: PrimaryRailItem[] = [
-  {
-    id: 'agent',
-    label: 'AI assistant',
-    icon: AiSettingsSolidIcon,
-    iconName: 'ai-settings-solid',
-  },
-]
+// The AI assistant rail button is intentionally hidden. `canUseAiChat` and the
+// AgentPanel plumbing stay in place (capability still governs the panel), but no
+// merchant-facing rail affordance is rendered for it.
+const GLOBAL_RAIL_ITEMS: PrimaryRailItem[] = []
 
 interface PanelRailProps {
   workspace?: 'site' | 'content' | 'media'

@@ -2,10 +2,11 @@
  * ExplorerPanel — the consolidated navigation panel.
  *
  * One `<Panel>` shell hosting a top SegmentedControl that switches between the
- * Layers (DOM tree), Site (pages/templates/components), Code (stylesheets +
- * scripts), and Media tabs. Each tab renders the corresponding panel in its
- * headerless `tab` variant — this shell owns the chrome (header + tabs +
- * close). Mirrors FrameworkPanel.
+ * Layers (DOM tree), Site (pages/templates/components), and Code (stylesheets +
+ * scripts) tabs. Each tab renders the corresponding panel in its headerless
+ * `tab` variant — this shell owns the chrome (header + tabs + close). Mirrors
+ * FrameworkPanel. (The Media tab is intentionally hidden — the media library is
+ * reached through its own workspace, not this explorer.)
  *
  * The Site and Code tabs are both served by a SINGLE `SiteExplorerPanel`
  * mount (its `sectionGroup` prop selects which sections show). Two separate
@@ -17,7 +18,6 @@ import { Panel } from '@admin/shared/Panel'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { DomPanel } from '@site/panels/DomPanel'
 import { SiteExplorerPanel } from '@site/panels/SiteExplorerPanel'
-import { MediaExplorerPanel } from '@site/panels/MediaExplorerPanel'
 import type { ExplorerPanelTab } from '@site/store/slices/uiSlice'
 import styles from './ExplorerPanel.module.css'
 
@@ -25,7 +25,6 @@ const TABS: ReadonlyArray<{ value: ExplorerPanelTab; label: string }> = [
   { value: 'layers', label: 'Layers' },
   { value: 'site', label: 'Site' },
   { value: 'code', label: 'Code' },
-  { value: 'media', label: 'Media' },
 ]
 
 interface ExplorerPanelProps {
@@ -67,9 +66,6 @@ export function ExplorerPanel({ editable = true }: ExplorerPanelProps) {
             sectionGroup={tab === 'code' ? 'code' : 'site'}
             organizationDndEnabled={editable}
           />
-        </div>
-        <div className={styles.tabMount} hidden={tab !== 'media'}>
-          <MediaExplorerPanel variant="tab" />
         </div>
       </div>
     </Panel>
