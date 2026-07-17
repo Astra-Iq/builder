@@ -129,6 +129,12 @@ export function generateSiteFontsCss(
   const blocks: string[] = []
   for (const entry of fonts.items) {
     if (!entry || !entry.family || !entry.files) continue
+    // Google fonts load from the CSS2 CDN via `buildGoogleFontsLinkTags` — never
+    // as a self-hosted `@font-face`. New installs carry no files, but LEGACY
+    // installs (from the old download flow) still have `/uploads/fonts/...`
+    // files persisted; skip them by source so a stale self-hosted face (which
+    // 404s on an edge/object-storage deployment) never leaks into published CSS.
+    if (entry.source === 'google') continue
     for (const file of entry.files) {
       if (!file) continue
       // Re-apply the storage-boundary path check at the CSS boundary so a

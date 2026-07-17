@@ -9,9 +9,12 @@ import {
 } from '@core/fonts'
 import type { FontEntry, SiteFontsSettings } from '@core/fonts'
 
+// Self-hosted @font-face is emitted only for `source: 'custom'` fonts; Google
+// fonts load from the CSS2 CDN instead. These generator-mechanics fixtures use
+// custom source so `generateSiteFontsCss` actually emits faces for them.
 const inter: FontEntry = {
   id: 'f1',
-  source: 'google',
+  source: 'custom',
   family: 'Inter',
   variants: ['400', '700italic'],
   subsets: ['latin'],
@@ -29,7 +32,7 @@ const malicious: FontEntry = {
   // breakouts in family name, and an off-brand path. The generator must
   // strip / refuse all of these.
   id: 'f2',
-  source: 'google',
+  source: 'custom',
   family: 'Bad"Family</style>',
   variants: ['400'],
   subsets: ['latin'],
@@ -71,6 +74,25 @@ describe('generateSiteFontsCss', () => {
     expect(generateSiteFontsCss(null)).toBe('')
     expect(generateSiteFontsCss(undefined)).toBe('')
     expect(generateSiteFontsCss({ items: [] })).toBe('')
+  })
+
+  it('never self-hosts a google entry, even a legacy one with /uploads/fonts files', () => {
+    // Live installs from the old download flow still carry `/uploads/fonts/...`
+    // files on their google entries. Those must NOT emit a self-hosted
+    // @font-face (it 404s on edge/object-storage) — google loads from the CDN.
+    const legacyGoogle: FontEntry = {
+      id: 'legacy',
+      source: 'google',
+      family: 'Inter',
+      variants: ['400'],
+      subsets: ['latin'],
+      files: [
+        { variant: '400', subset: 'latin', path: '/uploads/fonts/inter/400-latin.woff2', format: 'woff2' },
+      ],
+      createdAt: 0,
+      updatedAt: 0,
+    }
+    expect(generateSiteFontsCss({ items: [legacyGoogle] })).toBe('')
   })
 
   it('emits one @font-face per slice with unicode-range when present', () => {
